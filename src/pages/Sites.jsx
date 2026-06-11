@@ -1,0 +1,407 @@
+import React, { useState } from 'react';
+import { useApp } from '../context/AppContext';
+import { Building2, Plus, MapPin, Users, CheckCircle2, UserPlus, Trash2, Layers } from 'lucide-react';
+
+export const Sites = () => {
+  const { db, currentUser, addSite, addUser, unlinkUserFromSite, updateSitePrice, deleteSite, assignProfileToSite, unassignProfileFromSite, showToast } = useApp();
+  const [newSiteName, setNewSiteName] = useState('');
+  const [newSiteLoc, setNewSiteLoc] = useState('');
+  const [confirmDeleteSiteId, setConfirmDeleteSiteId] = useState(null);
+  
+  // User assignment form states
+  const [targetUserId, setTargetUserId] = useState('');
+  const [targetSiteId, setTargetSiteId] = useState('');
+
+  const handleCreateSite = (e) => {
+    e.preventDefault();
+    if (!newSiteName || !newSiteLoc) {
+      showToast('Please fill out all site fields');
+      return;
+    }
+    addSite(newSiteName, newSiteLoc);
+    setNewSiteName('');
+    setNewSiteLoc('');
+  };
+
+  const handleAssignUser = (e) => {
+    e.preventDefault();
+    if (!targetUserId || !targetSiteId) {
+      showToast('Select user and site');
+      return;
+    }
+
+    const dbInst = JSON.parse(localStorage.getItem('coupon_system_db'));
+    // Check if already assigned
+    const exists = dbInst.userSites.some(us => us.userId === targetUserId && us.siteId === targetSiteId);
+    if (exists) {
+      showToast('User already assigned to this site');
+      return;
+    }
+
+    dbInst.userSites.push({ userId: targetUserId, siteId: targetSiteId });
+    // Save back to db and refresh context
+    localStorage.setItem('coupon_system_db', JSON.stringify(dbInst));
+    showToast('User assigned to site successfully');
+    window.location.reload(); // Quick refresh to reload all context state
+  };
+
+  // Group user assignments by site
+  const getAssignedUsersBySite = (siteId) => {
+    const userAssignments = db.userSites.filter(us => us.siteId === siteId);
+    const usersList = userAssignments.map(us => db.users.find(u => u.id === us.userId)).filter(Boolean);
+    
+    // Group by role
+    const grouped = {
+      Owner: [],
+      Manager: [],
+      'Super Staff': [],
+      Staff: [],
+      Accountant: []
+    };
+    usersList.forEach(u => {
+      if (grouped[u.role]) {
+        grouped[u.role].push(u);
+      }
+    });
+    return grouped;
+  };
+
+  return (
+    <div>
+      <div className="page-header-row">
+        <div>
+          <h1 className="page-title-main">Site Management</h1>
+          <p className="page-subtitle">Configure multi-tenant site divisions and align team roles to site boundaries</p>
+        </div>
+      </div>
+
+      <div className="layout-grid-columns-3" style={{ marginBottom: '2rem' }}>
+        {/* Create Site Card */}
+        <div className="ui-card" style={{ gridColumn: 'span 1' }}>
+          <div className="ui-card-header">
+            <span className="ui-card-title">Add New Site</span>
+          </div>
+          <div className="ui-card-body">
+            <form onSubmit={handleCreateSite} className="flex-direction-gap">
+              <div className="form-input-wrapper">
+                <label className="form-field-label">Site Name</label>
+                <input 
+                  type="text" 
+                  className="text-input-field" 
+                  placeholder="e.g. Site D" 
+                  value={newSiteName} 
+                  onChange={(e) => setNewSiteName(e.target.value)} 
+                />
+              </div>
+              <div className="form-input-wrapper">
+                <label className="form-field-label">Location Address</label>
+                <input 
+                  type="text" 
+                  className="text-input-field" 
+                  placeholder="e.g. Fujairah, UAE" 
+                  value={newSiteLoc} 
+                  onChange={(e) => setNewSiteLoc(e.target.value)} 
+                />
+              </div>
+              <button type="submit" className="action-btn btn-brand-blue" style={{ marginTop: '0.5rem' }}>
+                <Plus size={14} /> Create Site
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {/* Assign User to Site Card */}
+        <div className="ui-card" style={{ gridColumn: 'span 2' }}>
+          <div className="ui-card-header">
+            <span className="ui-card-title">Link User to Site</span>
+          </div>
+          <div className="ui-card-body">
+            <form onSubmit={handleAssignUser} className="form-grid-columns-2" style={{ gap: '1rem' }}>
+              <div className="form-input-wrapper">
+                <label className="form-field-label">Select Team Member</label>
+                <select 
+                  className="select-dropdown-field" 
+                  value={targetUserId} 
+                  onChange={(e) => setTargetUserId(e.target.value)}
+                >
+                  <option value="">-- Choose User --</option>
+                  {db.users.filter(u => u.role !== 'Admin').map(u => (
+                    <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-input-wrapper">
+                <label className="form-field-label">Select Destination Site</label>
+                <select 
+                  className="select-dropdown-field" 
+                  value={targetSiteId} 
+                  onChange={(e) => setTargetSiteId(e.target.value)}
+                >
+                  <option value="">-- Choose Site --</option>
+                  {db.sites.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ gridColumn: 'span 2', textAlign: 'right' }}>
+                <button type="submit" className="action-btn btn-brand-purple">
+                  <UserPlus size={14} /> Link Member
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      {/* Sites Listing Grid */}
+      <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text)' }}>Active Site Tenancies</h2>
+      
+      <div className="layout-grid-columns-2">
+        {db.sites.map(site => {
+          const assignments = getAssignedUsersBySite(site.id);
+          return (
+            <div key={site.id} className="ui-card">
+              <div className="ui-card-header">
+                <div className="flex-align-items-center" style={{ gap: '0.5rem' }}>
+                  <Building2 size={18} style={{ color: 'var(--blue)' }} />
+                  <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text)' }}>{site.name}</span>
+                </div>
+                <div className="flex-align-items-center" style={{ gap: '0.5rem' }}>
+                  <span className="pill-badge badge-success">Active</span>
+                  {currentUser.role === 'Admin' && (
+                    <button
+                      onClick={() => setConfirmDeleteSiteId(site.id)}
+                      style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
+                      title="Delete Site"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="ui-card-body">
+                <div className="flex-align-items-center" style={{ gap: '0.4rem', fontSize: '0.8rem', color: 'var(--text-3)', marginBottom: '1rem' }}>
+                  <MapPin size={12} />
+                  <span>{site.location}</span>
+                </div>
+
+                <div className="ui-section-divider" style={{ margin: '0.5rem 0' }} />
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.75rem' }}>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.25rem' }}>Site Managers</div>
+                    {assignments.Manager.length > 0 ? (
+                      assignments.Manager.map((u) => (
+                        <div key={u.id} className="flex-align-items-center flex-justify-space-between" style={{ fontSize: '0.8rem', color: 'var(--text)', marginBottom: '0.25rem' }}>
+                          <span>{u.name}</span>
+                          {currentUser.role === 'Admin' && (
+                            <button 
+                              onClick={() => unlinkUserFromSite(u.id, site.id)}
+                              style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: '0 4px', fontSize: '0.75rem', fontWeight: 700 }}
+                              title={`Unlink ${u.name}`}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    ) : <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', fontStyle: 'italic' }}>None assigned</div>}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.25rem' }}>Super Staff</div>
+                    {assignments['Super Staff'].length > 0 ? (
+                      assignments['Super Staff'].map((u) => (
+                        <div key={u.id} className="flex-align-items-center flex-justify-space-between" style={{ fontSize: '0.8rem', color: 'var(--text)', marginBottom: '0.25rem' }}>
+                          <span>{u.name}</span>
+                          {currentUser.role === 'Admin' && (
+                            <button 
+                              onClick={() => unlinkUserFromSite(u.id, site.id)}
+                              style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: '0 4px', fontSize: '0.75rem', fontWeight: 700 }}
+                              title={`Unlink ${u.name}`}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    ) : <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', fontStyle: 'italic' }}>None assigned</div>}
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.25rem' }}>Sales Staff</div>
+                    {assignments.Staff.length > 0 ? (
+                      assignments.Staff.map((u) => (
+                        <div key={u.id} className="flex-align-items-center flex-justify-space-between" style={{ fontSize: '0.8rem', color: 'var(--text)', marginBottom: '0.25rem' }}>
+                          <span>{u.name}</span>
+                          {currentUser.role === 'Admin' && (
+                            <button 
+                              onClick={() => unlinkUserFromSite(u.id, site.id)}
+                              style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: '0 4px', fontSize: '0.75rem', fontWeight: 700 }}
+                              title={`Unlink ${u.name}`}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    ) : <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', fontStyle: 'italic' }}>None assigned</div>}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.25rem' }}>Accountants</div>
+                    {assignments.Accountant.length > 0 ? (
+                      assignments.Accountant.map((u) => (
+                        <div key={u.id} className="flex-align-items-center flex-justify-space-between" style={{ fontSize: '0.8rem', color: 'var(--text)', marginBottom: '0.25rem' }}>
+                          <span>{u.name}</span>
+                          {currentUser.role === 'Admin' && (
+                            <button 
+                              onClick={() => unlinkUserFromSite(u.id, site.id)}
+                              style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: '0 4px', fontSize: '0.75rem', fontWeight: 700 }}
+                              title={`Unlink ${u.name}`}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    ) : <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', fontStyle: 'italic' }}>None assigned</div>}
+                  </div>
+                </div>
+
+                {currentUser.role === 'Admin' && (() => {
+                  const assignedProfileIds = new Set(
+                    (db.sitePrices || []).filter(sp => sp.siteId === site.id).map(sp => sp.profileId)
+                  );
+                  const assignedProfiles = db.couponProfiles.filter(p => assignedProfileIds.has(p.id));
+                  const unassignedProfiles = db.couponProfiles.filter(p => !assignedProfileIds.has(p.id));
+                  const [assignSelect, setAssignSelect] = React.useState('');
+
+                  return (
+                    <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.5rem' }}>
+                        Assigned Profiles
+                      </div>
+
+                      {/* Assign new profile row */}
+                      {unassignedProfiles.length > 0 && (
+                        <div className="flex-align-items-center" style={{ gap: '0.4rem', marginBottom: '0.5rem' }}>
+                          <select
+                            className="select-dropdown-field"
+                            style={{ flex: 1, fontSize: '0.75rem', padding: '3px 6px' }}
+                            value={assignSelect}
+                            onChange={(e) => setAssignSelect(e.target.value)}
+                          >
+                            <option value="">— Add profile to site —</option>
+                            {unassignedProfiles.map(p => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+                          <button
+                            className="action-btn btn-brand-blue"
+                            style={{ fontSize: '0.72rem', padding: '3px 10px', whiteSpace: 'nowrap' }}
+                            disabled={!assignSelect}
+                            onClick={async () => {
+                              if (assignSelect) {
+                                await assignProfileToSite(site.id, assignSelect);
+                                setAssignSelect('');
+                              }
+                            }}
+                          >
+                            <Plus size={11} /> Assign
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Assigned profiles list with price overrides */}
+                      {assignedProfiles.length === 0 ? (
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', fontStyle: 'italic', padding: '0.25rem 0' }}>No profiles assigned yet</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          {assignedProfiles.map(prof => {
+                            const override = db.sitePrices?.find(sp => sp.siteId === site.id && sp.profileId === prof.id);
+                            const currentCost = override ? override.costPrice : prof.costPrice;
+                            const currentSale = override ? override.salePrice : prof.salePrice;
+
+                            return (
+                              <div key={prof.id} className="flex-align-items-center flex-justify-space-between" style={{ fontSize: '0.78rem', background: 'var(--surface-2)', padding: '0.35rem 0.5rem', borderRadius: '4px' }}>
+                                <div style={{ flex: 1, minWidth: '80px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <Layers size={11} style={{ color: 'var(--blue)' }} />
+                                  <span style={{ fontWeight: 600, fontSize: '0.75rem' }}>{prof.name}</span>
+                                </div>
+                                <div className="flex-align-items-center" style={{ gap: '0.35rem' }}>
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>Cost:</span>
+                                  <input
+                                    type="number"
+                                    defaultValue={currentCost}
+                                    style={{ width: '45px', fontSize: '0.75rem', padding: '1px 3px', border: '1px solid var(--border)', borderRadius: '2px', background: 'var(--surface)' }}
+                                    onBlur={(e) => {
+                                      const val = Number(e.target.value);
+                                      if (val !== currentCost) updateSitePrice(site.id, prof.id, currentSale, val);
+                                    }}
+                                  />
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>Sale:</span>
+                                  <input
+                                    type="number"
+                                    defaultValue={currentSale}
+                                    style={{ width: '45px', fontSize: '0.75rem', padding: '1px 3px', border: '1px solid var(--border)', borderRadius: '2px', background: 'var(--surface)' }}
+                                    onBlur={(e) => {
+                                      const val = Number(e.target.value);
+                                      if (val !== currentSale) updateSitePrice(site.id, prof.id, val, currentCost);
+                                    }}
+                                  />
+                                  <button
+                                    onClick={() => unassignProfileFromSite(site.id, prof.id)}
+                                    style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: '0 3px', display: 'flex', alignItems: 'center' }}
+                                    title="Remove from site"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Confirm Delete Site Modal */}
+      {confirmDeleteSiteId && (() => {
+        const site = db.sites.find(s => s.id === confirmDeleteSiteId);
+        return (
+          <div className="app-modal-backdrop modal-open-state">
+            <div className="app-modal-window" style={{ maxWidth: '400px' }}>
+              <div className="app-modal-header">
+                <span className="app-modal-title">Delete Site</span>
+                <button className="app-modal-close-btn" onClick={() => setConfirmDeleteSiteId(null)}>×</button>
+              </div>
+              <div className="app-modal-body">
+                <p style={{ fontSize: '0.9rem', color: 'var(--text-2)' }}>
+                  Are you sure you want to delete <strong style={{ color: 'var(--text)' }}>{site?.name}</strong>? This will remove the site and all associated data. This action cannot be undone.
+                </p>
+              </div>
+              <div className="app-modal-footer">
+                <button className="action-btn btn-outlined" onClick={() => setConfirmDeleteSiteId(null)}>Cancel</button>
+                <button
+                  className="action-btn"
+                  style={{ background: 'var(--red)', color: '#fff', border: 'none' }}
+                  onClick={async () => { await deleteSite(confirmDeleteSiteId); setConfirmDeleteSiteId(null); }}
+                >
+                  <Trash2 size={13} /> Delete Site
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+};
