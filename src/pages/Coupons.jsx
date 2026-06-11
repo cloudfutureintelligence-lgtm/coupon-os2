@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Ticket, 
@@ -12,10 +12,14 @@ import {
   ArrowRight,
   ExternalLink,
   ChevronRight,
+  ChevronLeft,
   FileSpreadsheet,
   Trash2,
   CheckSquare
 } from 'lucide-react';
+
+const PAGE_SIZE = 50;
+const STATUS_ORDER = { Available: 0, Sold: 1, Expired: 2, Cancelled: 3 };
 
 export const Coupons = () => {
   const { 
@@ -61,6 +65,7 @@ export const Coupons = () => {
 
   // Selected coupon for history details
   const [selectedCoupon, setSelectedCoupon] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   if (!currentUser) return null;
 
@@ -148,7 +153,26 @@ export const Coupons = () => {
     return list;
   };
 
-  const filteredCoupons = getFilteredCoupons();
+  const filteredCoupons = useMemo(() => {
+    const list = getFilteredCoupons();
+    list.sort((a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9));
+    return list;
+  }, [db.coupons, selectedSiteId, localSearch, statusFilter, profileFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCoupons.length / PAGE_SIZE));
+  const pageStart  = (currentPage - 1) * PAGE_SIZE;
+  const pageRows   = filteredCoupons.slice(pageStart, pageStart + PAGE_SIZE);
+
+  const goToPage = (p) => setCurrentPage(Math.max(1, Math.min(p, totalPages)));
+
+  const pageBtnStyle = (active) => ({
+    minWidth: '32px', height: '32px', padding: '0 0.4rem',
+    borderRadius: '4px', border: '1px solid var(--border)',
+    background: active ? 'var(--brand-blue)' : 'var(--surface-2)',
+    color: active ? '#fff' : 'var(--text-2)',
+    fontWeight: active ? 700 : 400, fontSize: '0.78rem',
+    cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  });
 
   // Handle Manual Add Submit
   const handleManualAdd = (e) => {
@@ -285,7 +309,7 @@ export const Coupons = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredCoupons.length === 0 ? (
+            {pageRows.length === 0 ? (
               <tr>
                 <td colSpan="8" className="empty-view-state" style={{ padding: '3rem 1rem' }}>
                   <div className="empty-view-title">No coupons found</div>
@@ -293,7 +317,7 @@ export const Coupons = () => {
                 </td>
               </tr>
             ) : (
-              filteredCoupons.map(coupon => {
+              pageRows.map((coupon, idx) => {
                 const profile = db.couponProfiles.find(p => p.id === coupon.profileId);
                 const site = db.sites.find(s => s.id === coupon.siteId);
                 
@@ -343,6 +367,38 @@ export const Coupons = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{
+          padding: '0.75rem 1rem',
+          borderTop: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem',
+          background: 'var(--surface)', borderRadius: '0 0 var(--radius) var(--radius)',
+        }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>
+            {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filteredCoupons.length)} of {filteredCoupons.length} coupons &nbsp;·&nbsp; {PAGE_SIZE} per page
+          </span>
+          <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+            <button style={pageBtnStyle(false)} disabled={currentPage === 1} onClick={() => goToPage(currentPage - 1)}>
+              <ChevronLeft size={14} />
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+              .reduce((acc, p, i, arr) => {
+                if (i > 0 && p - arr[i - 1] > 1) acc.push('...');
+                acc.push(p); return acc;
+              }, [])
+              .map((p, i) => p === '...'
+                ? <span key={`e${i}`} style={{ fontSize: '0.78rem', color: 'var(--text-3)', padding: '0 0.2rem' }}>…</span>
+                : <button key={p} style={pageBtnStyle(p === currentPage)} onClick={() => goToPage(p)}>{p}</button>
+              )}
+            <button style={pageBtnStyle(false)} disabled={currentPage === totalPages} onClick={() => goToPage(currentPage + 1)}>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════
          MODAL: ADD COUPONS

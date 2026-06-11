@@ -120,6 +120,7 @@ export const SalesLog = () => {
     return db.users.filter(u => visibleSellerIds.includes(u.id));
   }, [db, visibleSellerIds]);
 
+  const showRevenue = role !== 'Staff' && role !== 'Super Staff';
   const hasActiveFilters = filterSiteId !== 'all' || filterProfile !== 'all' ||
     filterSeller !== 'all' || dateFrom || dateTo || search.trim();
 
@@ -253,9 +254,11 @@ export const SalesLog = () => {
           <span style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>
             <strong style={{ color: 'var(--text)' }}>{filtered.length}</strong> sales found
           </span>
-          <span style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>
-            Revenue: <strong style={{ color: 'var(--green)' }}>{totalRevenue.toLocaleString()} AED</strong>
-          </span>
+          {showRevenue && (
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>
+              Revenue: <strong style={{ color: 'var(--green)' }}>{totalRevenue.toLocaleString()} AED</strong>
+            </span>
+          )}
           {filtered.length > 0 && (
             <span style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>
               Showing {pageStart + 1}–{Math.min(pageEnd, filtered.length)} of {filtered.length}
@@ -290,7 +293,7 @@ export const SalesLog = () => {
                 <th>Profile</th>
                 {dropdownSites.length > 1 && <th>Site</th>}
                 <th>Sold By</th>
-                <th>Price</th>
+                {showRevenue && <th>Price</th>}
                 <th>Customer Name</th>
                 <th>Mobile</th>
                 <th>Date & Time</th>
@@ -329,7 +332,9 @@ export const SalesLog = () => {
                           </span>
                         )}
                       </td>
-                      <td style={{ fontWeight: 600, color: 'var(--green)' }}>{log.salePrice} AED</td>
+                      {showRevenue && (
+                        <td style={{ fontWeight: 600, color: 'var(--green)' }}>{log.salePrice} AED</td>
+                      )}
                       <td>{log.customerName || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                       <td>{log.customerPhone || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                       <td style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>

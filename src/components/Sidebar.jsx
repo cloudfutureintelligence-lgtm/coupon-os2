@@ -74,6 +74,7 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
       items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'Performance' });
       items.push({ id: 'collections', label: 'Collections Logs', icon: DollarSign, group: 'Performance' });
       items.push({ id: 'reports', label: 'Site Performance Reports', icon: BarChart3, group: 'Performance' });
+      items.push({ id: 'cashinhand', label: 'Cash In Hand', icon: Wallet, group: 'Performance' });
     }
 
     if (role === 'Manager') {
@@ -81,6 +82,7 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
       items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'Monitoring' });
       items.push({ id: 'collections', label: 'Cash Collections', icon: DollarSign, group: 'Monitoring' });
       items.push({ id: 'reports', label: 'Performance Reports', icon: BarChart3, group: 'Monitoring' });
+      items.push({ id: 'cashinhand', label: 'Cash In Hand', icon: Wallet, group: 'Monitoring' });
     }
 
     if (role === 'Super Staff') {
@@ -88,6 +90,7 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
       items.push({ id: 'sales', label: 'Sell Coupons', icon: Receipt, group: 'My Operations' });
       items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'My Operations' });
       items.push({ id: 'collections', label: 'Collect from Staff', icon: DollarSign, group: 'My Operations' });
+      items.push({ id: 'cashinhand', label: 'Cash In Hand', icon: Wallet, group: 'My Operations' });
       items.push({ id: 'wallets', label: 'My Wallets', icon: Wallet, group: 'My Wallet' });
     }
 
@@ -103,6 +106,7 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
       items.push({ id: 'wallets', label: 'Sites Balances', icon: Wallet, group: 'Treasury' });
       items.push({ id: 'ledger', label: 'Double Ledger Book', icon: BookOpen, group: 'Treasury' });
       items.push({ id: 'reports', label: 'Financial Statements', icon: BarChart3, group: 'Treasury' });
+      items.push({ id: 'cashinhand', label: 'Cash In Hand', icon: Wallet, group: 'Treasury' });
     }
 
     return items;

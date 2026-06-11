@@ -16,6 +16,7 @@ import { Users } from './pages/Users';
 import { AuditLogs } from './pages/AuditLogs';
 import { Settings } from './pages/Settings';
 import { ApiConsole } from './pages/ApiConsole';
+import { CashInHand } from './pages/CashInHand';
 import { 
   Bell, 
   Moon, 
@@ -95,6 +96,8 @@ export const App = () => {
         return <Settings />;
       case 'apiconsole':
         return <ApiConsole />;
+      case 'cashinhand':
+        return <CashInHand />;
       default:
         return <Dashboard setActivePage={setActivePage} />;
     }
