@@ -444,12 +444,10 @@ export const Coupons = () => {
                         onChange={(e) => {
                           const sid = e.target.value;
                           setManualSiteId(sid);
-                          if (sid && manualProfileId) {
-                            const profile = db.couponProfiles.find(p => p.id === manualProfileId);
-                            const override = db.sitePrices?.find(sp => sp.siteId === sid && sp.profileId === manualProfileId);
-                            setManualCost(override ? override.costPrice : profile?.costPrice || '');
-                            setManualSale(override ? override.salePrice : profile?.salePrice || '');
-                          }
+                          // Reset profile — new site may have different assigned profiles
+                          setManualProfileId('');
+                          setManualCost('');
+                          setManualSale('');
                         }}
                         required
                       >
@@ -477,10 +475,17 @@ export const Coupons = () => {
                         required
                       >
                         <option value="">-- Select Profile --</option>
-                        {db.couponProfiles.map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
+                        {db.couponProfiles
+                          .filter(p => !manualSiteId || db.sitePrices?.some(sp => sp.siteId === manualSiteId && sp.profileId === p.id))
+                          .map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
                       </select>
+                      {manualSiteId && db.sitePrices?.filter(sp => sp.siteId === manualSiteId).length === 0 && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--yellow)', marginTop: '0.25rem', display: 'block' }}>
+                          No profiles assigned to this site yet.
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -534,7 +539,7 @@ export const Coupons = () => {
                       <select 
                         className="select-dropdown-field" 
                         value={csvSiteId}
-                        onChange={(e) => setCsvSiteId(e.target.value)}
+                        onChange={(e) => { setCsvSiteId(e.target.value); setCsvProfileId(''); }}
                         required
                       >
                         <option value="">-- Select Site --</option>
@@ -552,10 +557,17 @@ export const Coupons = () => {
                         required
                       >
                         <option value="">-- Select Profile --</option>
-                        {db.couponProfiles.map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
+                        {db.couponProfiles
+                          .filter(p => !csvSiteId || db.sitePrices?.some(sp => sp.siteId === csvSiteId && sp.profileId === p.id))
+                          .map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
                       </select>
+                      {csvSiteId && db.sitePrices?.filter(sp => sp.siteId === csvSiteId).length === 0 && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--yellow)', marginTop: '0.25rem', display: 'block' }}>
+                          No profiles assigned to this site yet.
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -595,7 +607,7 @@ export const Coupons = () => {
                       <select 
                         className="select-dropdown-field" 
                         value={apiSiteId}
-                        onChange={(e) => setApiSiteId(e.target.value)}
+                        onChange={(e) => { setApiSiteId(e.target.value); setApiProfileId(''); }}
                         required
                       >
                         <option value="">-- Select Site --</option>
@@ -613,10 +625,17 @@ export const Coupons = () => {
                         required
                       >
                         <option value="">-- Select Profile --</option>
-                        {db.couponProfiles.map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
+                        {db.couponProfiles
+                          .filter(p => !apiSiteId || db.sitePrices?.some(sp => sp.siteId === apiSiteId && sp.profileId === p.id))
+                          .map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
                       </select>
+                      {apiSiteId && db.sitePrices?.filter(sp => sp.siteId === apiSiteId).length === 0 && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--yellow)', marginTop: '0.25rem', display: 'block' }}>
+                          No profiles assigned to this site yet.
+                        </span>
+                      )}
                     </div>
                   </div>
 

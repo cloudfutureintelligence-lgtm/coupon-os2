@@ -93,30 +93,96 @@ export const AppProvider = ({ children }) => {
 
   // Notifications
   useEffect(() => {
-    const lowStockAlerts = [];
+    if (!currentUser) { setNotifications([]); return; }
+
+    const role = currentUser.role;
     const threshold = dbState.settings?.lowStockThreshold || 5;
-    dbState.couponProfiles.forEach(prof => {
-      const available = dbState.coupons.filter(c => c.profileId === prof.id && c.status === 'Available');
-      if (available.length > 0 && available.length < threshold) {
-        lowStockAlerts.push({ id: `warn-global-${prof.id}`, timestamp: new Date().toISOString(), type: 'WARNING', message: `Low stock: ${prof.name} has only ${available.length} units left!`, icon: 'fa-triangle-exclamation', color: 'var(--yellow)', bg: 'var(--yellow-light)' });
-      }
-      dbState.sites.forEach(site => {
-        const siteAssigned = dbState.coupons.filter(c => c.profileId === prof.id && c.siteId === site.id && c.status === 'Assigned');
+
+    // ── 1. Low-stock alerts (site + profile scoped) ──────────────────────────
+    // Determine which sites this user cares about
+    const userSiteIds = GLOBAL_ROLES.includes(role)
+      ? dbState.sites.map(s => s.id)
+      : (dbState.userSites || []).filter(us => us.userId === currentUser.id).map(us => us.siteId);
+
+    const lowStockAlerts = [];
+    // Only check sites relevant to this user; only flag the specific profile that is low
+    userSiteIds.forEach(siteId => {
+      const site = dbState.sites.find(s => s.id === siteId);
+      if (!site) return;
+      dbState.couponProfiles.forEach(prof => {
+        const siteAssigned = dbState.coupons.filter(
+          c => c.profileId === prof.id && c.siteId === siteId && (c.status === 'Assigned' || c.status === 'Available')
+        );
         if (siteAssigned.length > 0 && siteAssigned.length < threshold) {
-          lowStockAlerts.push({ id: `warn-${site.id}-${prof.id}`, timestamp: new Date().toISOString(), type: 'WARNING', message: `Low stock: ${prof.name} at ${site.name} has ${siteAssigned.length} units left.`, icon: 'fa-triangle-exclamation', color: 'var(--yellow)', bg: 'var(--yellow-light)' });
+          lowStockAlerts.push({
+            id: `warn-${siteId}-${prof.id}`,
+            timestamp: new Date().toISOString(),
+            type: 'WARNING',
+            message: `Low stock: ${prof.name} at ${site.name} has only ${siteAssigned.length} unit(s) left.`,
+            icon: 'fa-triangle-exclamation',
+            color: 'var(--yellow)',
+            bg: 'var(--yellow-light)',
+          });
         }
       });
     });
-    const recentLogs = dbState.auditLogs.slice(0, 8).map(log => {
-      let icon = 'fa-bell', color = 'var(--blue)', bg = 'var(--blue-light)';
-      if (log.action.includes('SALE'))       { icon = 'fa-receipt';               color = 'var(--green)';  bg = 'var(--green-light)'; }
-      else if (log.action.includes('COLLECTION')) { icon = 'fa-money-bill-transfer'; color = 'var(--purple)'; bg = 'var(--purple-light)'; }
-      else if (log.action.includes('REVERSAL'))   { icon = 'fa-arrow-rotate-left';   color = 'var(--red)';    bg = 'var(--red-light)'; }
-      const userObj = dbState.users.find(u => u.id === log.userId);
-      return { id: log.id, timestamp: log.timestamp, type: 'LOG', message: `${userObj ? userObj.name : log.userId}: ${log.details}`, icon, color, bg };
-    });
-    setNotifications([...lowStockAlerts, ...recentLogs]);
-  }, [dbState]);
+
+    // ── 2. Recent activity logs — role-scoped, no LOGIN/LOGOUT/SALE events ───
+    // Which roles' actions are visible to each role:
+    //   Staff        → own logs only
+    //   Super Staff  → Staff + own
+    //   Manager      → Staff + Super Staff + own
+    //   Owner        → Manager + Accountant + own
+    //   Accountant   → own logs only
+    //   Admin        → everyone (except LOGIN/LOGOUT/SALE)
+    const getVisibleRoles = () => {
+      switch (role) {
+        case 'Admin':    return null; // null = all roles
+        case 'Owner':    return ['Owner', 'Manager', 'Accountant'];
+        case 'Manager':  return ['Manager', 'Staff', 'Super Staff'];
+        case 'Super Staff': return ['Super Staff', 'Staff'];
+        case 'Staff':    return ['Staff'];
+        case 'Accountant': return ['Accountant'];
+        default:         return [role];
+      }
+    };
+
+    const visibleRoles = getVisibleRoles();
+
+    // Excluded action types
+    const EXCLUDED_ACTIONS = ['LOGIN', 'LOGOUT', 'SALE', 'COUPON_SALE'];
+
+    const filteredLogs = dbState.auditLogs
+      .filter(log => {
+        // Skip login/logout/sale events entirely
+        if (EXCLUDED_ACTIONS.some(ex => log.action.includes(ex))) return false;
+        // Role filter
+        if (visibleRoles !== null) {
+          const logUser = dbState.users.find(u => u.id === log.userId);
+          const logUserRole = logUser?.role || '';
+          // Always include own logs; otherwise check visible roles
+          if (log.userId !== currentUser.id && !visibleRoles.includes(logUserRole)) return false;
+        }
+        return true;
+      })
+      .slice(0, 8)
+      .map(log => {
+        let icon = 'fa-bell', color = 'var(--blue)', bg = 'var(--blue-light)';
+        if (log.action.includes('COLLECTION')) { icon = 'fa-money-bill-transfer'; color = 'var(--purple)'; bg = 'var(--purple-light)'; }
+        else if (log.action.includes('REVERSAL')) { icon = 'fa-arrow-rotate-left'; color = 'var(--red)'; bg = 'var(--red-light)'; }
+        else if (log.action.includes('ASSIGN'))   { icon = 'fa-link';              color = 'var(--blue)';   bg = 'var(--blue-light)'; }
+        const userObj = dbState.users.find(u => u.id === log.userId);
+        return {
+          id: log.id,
+          timestamp: log.timestamp,
+          type: 'LOG',
+          message: `${userObj ? userObj.name : log.userId}: ${log.details}`,
+          icon, color, bg,
+        };
+      });
+
+    setNotifications([...lowStockAlerts, ...filteredLogs]);
+  }, [dbState, currentUser]);
 
   const getAccessibleSites = () => {
     if (!currentUser) return [];
