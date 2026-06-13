@@ -63,7 +63,7 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
       items.push({ id: 'sales', label: 'Sales Records', icon: Receipt, group: 'People & Sales' });
       items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'People & Sales' });
       
-      items.push({ id: 'reports', label: 'Analytics Reports', icon: BarChart3, group: 'System Logs' });
+      items.push({ id: 'salesanalytics', label: 'Analytics Reports', icon: BarChart3, group: 'System Logs' });
       items.push({ id: 'audit', label: 'Audit Logs', icon: ShieldAlert, group: 'System Logs' });
       items.push({ id: 'settings', label: 'Settings', icon: Settings, group: 'System Logs' });
       items.push({ id: 'apiconsole', label: 'REST API Console', icon: Terminal, group: 'System Logs' });
@@ -73,7 +73,6 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
       items.push({ id: 'sales', label: 'Sales Analytics', icon: Receipt, group: 'Performance' });
       items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'Performance' });
       items.push({ id: 'collections', label: 'Collections Logs', icon: DollarSign, group: 'Performance' });
-      items.push({ id: 'reports', label: 'Site Performance Reports', icon: BarChart3, group: 'Performance' });
       items.push({ id: 'cashinhand', label: 'Cash In Hand', icon: Wallet, group: 'Performance' });
     }
 
@@ -81,7 +80,6 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
       items.push({ id: 'sales', label: 'Sales Analytics', icon: Receipt, group: 'Monitoring' });
       items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'Monitoring' });
       items.push({ id: 'collections', label: 'Cash Collections', icon: DollarSign, group: 'Monitoring' });
-      items.push({ id: 'reports', label: 'Performance Reports', icon: BarChart3, group: 'Monitoring' });
       items.push({ id: 'cashinhand', label: 'Cash In Hand', icon: Wallet, group: 'Monitoring' });
     }
 
@@ -105,7 +103,7 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
       items.push({ id: 'collections', label: 'Collect Cash (Splits)', icon: DollarSign, group: 'Treasury' });
       items.push({ id: 'wallets', label: 'Sites Balances', icon: Wallet, group: 'Treasury' });
       items.push({ id: 'ledger', label: 'Double Ledger Book', icon: BookOpen, group: 'Treasury' });
-      items.push({ id: 'reports', label: 'Financial Statements', icon: BarChart3, group: 'Treasury' });
+      items.push({ id: 'salesanalytics', label: 'Sales Analytics', icon: BarChart3, group: 'Treasury' });
       items.push({ id: 'cashinhand', label: 'Cash In Hand', icon: Wallet, group: 'Treasury' });
     }
 
