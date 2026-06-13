@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, BarChart2, Calendar, TrendingUp } from 'lucide-react';
+import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, BarChart2, Calendar, TrendingUp, MessageSquare, CheckCheck } from 'lucide-react';
+import { sendCouponSms, normalisePhone, isAllowedForProvider } from '../utils/smsService';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Role visibility matrix for sold coupon list
@@ -52,6 +53,12 @@ export const Sales = () => {
   // Optimistic sold entry shown immediately after sale
   const [pendingSale, setPendingSale]           = useState(null);
 
+  // SMS delivery state
+  const [smsSending, setSmsSending]   = useState(false);
+  const [smsSent, setSmsSent]         = useState(false);
+  const [smsError, setSmsError]       = useState('');
+  const [smsPhone, setSmsPhone]       = useState('');
+
   // Sales-log search (code, name, mobile)
   const [logSearch, setLogSearch] = useState('');
 
@@ -99,6 +106,10 @@ export const Sales = () => {
         setSoldCouponCode(res.couponCode);
         setSaleModalOpen(false);
         setTargetProfile(null);
+        // Pre-fill SMS phone from customer phone and reset SMS state
+        setSmsPhone(custPhone || '');
+        setSmsSent(false);
+        setSmsError('');
         setSuccessModalOpen(true);
       }
     } catch (err) {
@@ -604,29 +615,134 @@ export const Sales = () => {
         )}
 
         {/* Success modal */}
-        {successModalOpen && (
-          <div className="app-modal-backdrop modal-open-state">
-            <div className="app-modal-window" style={{ maxWidth: '400px' }}>
-              <div className="app-modal-header" style={{ borderBottom: 'none' }}>
-                <span className="app-modal-title" style={{ display: 'block', width: '100%', textAlign: 'center', fontSize: '1.2rem', color: 'var(--green)' }}>
-                  ✓ Sale Completed Successfully
-                </span>
-              </div>
-              <div className="app-modal-body" style={{ textAlign: 'center', padding: '0.5rem 1.5rem 2rem 1.5rem' }}>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-2)', marginBottom: '1.5rem' }}>
-                  Share this code with the customer to activate their internet access:
-                </p>
-                <div style={{ background: 'var(--surface-2)', padding: '1.25rem', borderRadius: 'var(--radius)', border: '2px dashed var(--green)', marginBottom: '1.5rem' }}>
-                  <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Access Code</span>
-                  <strong className="td-monospaced" style={{ fontSize: '1.6rem', color: 'var(--text)', fontWeight: 800 }}>{soldCouponCode}</strong>
+        {successModalOpen && (() => {
+          const smsConfigured = db.settings?.smsProvider &&
+            (db.settings.smsProvider === 'twilio'
+              ? db.settings.twilioAccountSid && db.settings.twilioAuthToken && db.settings.twilioFromNumber
+              : db.settings.msegatUserName && db.settings.msegatApiKey && db.settings.msegatSenderName);
+
+          const e164Preview = normalisePhone(smsPhone);
+          const phoneValid  = e164Preview && isAllowedForProvider(e164Preview, db.settings?.smsProvider || 'twilio');
+
+          const handleSendSms = async () => {
+            if (!phoneValid || smsSending || smsSent) return;
+            setSmsSending(true);
+            setSmsError('');
+            const profileName = pendingSale
+              ? db.couponProfiles.find(p => p.id === pendingSale.profileId)?.name || ''
+              : '';
+            const result = await sendCouponSms(db.settings, smsPhone, soldCouponCode, profileName);
+            setSmsSending(false);
+            if (result.success) {
+              setSmsSent(true);
+              showToast('SMS sent successfully!');
+            } else {
+              setSmsError(result.error || 'SMS failed. Check Settings → SMS Gateway.');
+            }
+          };
+
+          return (
+            <div className="app-modal-backdrop modal-open-state">
+              <div className="app-modal-window" style={{ maxWidth: '420px' }}>
+                <div className="app-modal-header" style={{ borderBottom: 'none' }}>
+                  <span className="app-modal-title" style={{ display: 'block', width: '100%', textAlign: 'center', fontSize: '1.2rem', color: 'var(--green)' }}>
+                    ✓ Sale Completed Successfully
+                  </span>
                 </div>
-                <button type="button" className="action-btn btn-brand-blue" style={{ width: '100%' }} onClick={() => setSuccessModalOpen(false)}>
-                  Close & Continue
-                </button>
+                <div className="app-modal-body" style={{ padding: '0.5rem 1.5rem 1.5rem 1.5rem' }}>
+
+                  {/* Coupon code display */}
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-2)', marginBottom: '1rem', textAlign: 'center' }}>
+                    Share this code with the customer to activate their internet access:
+                  </p>
+                  <div style={{ background: 'var(--surface-2)', padding: '1.25rem', borderRadius: 'var(--radius)', border: '2px dashed var(--green)', marginBottom: '1.25rem', textAlign: 'center' }}>
+                    <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Access Code</span>
+                    <strong className="td-monospaced" style={{ fontSize: '1.6rem', color: 'var(--text)', fontWeight: 800 }}>{soldCouponCode}</strong>
+                  </div>
+
+                  {/* SMS section */}
+                  <div style={{
+                    background: smsSent ? 'var(--green-light)' : 'var(--surface-2)',
+                    border: `1px solid ${smsSent ? 'var(--green)' : 'var(--border)'}`,
+                    borderRadius: 'var(--radius)',
+                    padding: '0.9rem 1rem',
+                    marginBottom: '1rem',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.6rem' }}>
+                      {smsSent
+                        ? <CheckCheck size={14} style={{ color: 'var(--green)' }} />
+                        : <MessageSquare size={14} style={{ color: 'var(--text-3)' }} />}
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: smsSent ? 'var(--green)' : 'var(--text)' }}>
+                        {smsSent ? 'SMS Sent!' : 'Send Code via SMS'}
+                      </span>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-3)', marginLeft: 'auto' }}>
+                        {db.settings?.smsProvider === 'msegat'
+                          ? 'UAE · KSA · Qatar · Bahrain · Oman'
+                          : 'UAE · KSA · Qatar · Bahrain · Oman · India'}
+                      </span>
+                    </div>
+
+                    {!smsSent && (
+                      <>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                          <input
+                            type="tel"
+                            className="text-input-field"
+                            placeholder={db.settings?.smsProvider === 'msegat'
+                              ? 'e.g. +971xxxxxxxx or +966xxxxxxxx'
+                              : 'e.g. +91xxxxxxxxxx or +971xxxxxxxx'}
+                            value={smsPhone}
+                            onChange={e => { setSmsPhone(e.target.value); setSmsError(''); }}
+                            disabled={smsSending}
+                            style={{ flex: 1, fontSize: '0.82rem' }}
+                          />
+                          <button
+                            type="button"
+                            className="action-btn btn-brand-blue"
+                            style={{ whiteSpace: 'nowrap', minWidth: '90px', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                            onClick={handleSendSms}
+                            disabled={!phoneValid || smsSending || !smsConfigured}
+                          >
+                            {smsSending
+                              ? <><Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite' }} /> Sending…</>
+                              : <><MessageSquare size={13} /> Send SMS</>}
+                          </button>
+                        </div>
+
+                        {/* Helper text */}
+                        {smsPhone && !phoneValid && (
+                          <p style={{ fontSize: '0.7rem', color: 'var(--yellow)', marginTop: '0.35rem' }}>
+                            {db.settings?.smsProvider === 'msegat'
+                              ? 'Msegat supports UAE, KSA, Qatar, Bahrain, Oman only.'
+                              : 'Twilio supports UAE, KSA, Qatar, Bahrain, Oman and India. Enter with country code e.g. +91xxxxxxxxxx.'}
+                          </p>
+                        )}
+                        {phoneValid && !smsConfigured && (
+                          <p style={{ fontSize: '0.7rem', color: 'var(--yellow)', marginTop: '0.35rem' }}>
+                            SMS not configured. Ask Admin to set up the SMS Gateway in Settings.
+                          </p>
+                        )}
+                        {smsError && (
+                          <p style={{ fontSize: '0.7rem', color: 'var(--red)', marginTop: '0.35rem' }}>{smsError}</p>
+                        )}
+                      </>
+                    )}
+
+                    {smsSent && (
+                      <p style={{ fontSize: '0.75rem', color: 'var(--green)', margin: 0 }}>
+                        Coupon code delivered to {normalisePhone(smsPhone)}.
+                      </p>
+                    )}
+                  </div>
+
+                  <button type="button" className="action-btn btn-brand-blue" style={{ width: '100%' }} onClick={() => setSuccessModalOpen(false)}>
+                    Close &amp; Continue
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </>
     );
   };

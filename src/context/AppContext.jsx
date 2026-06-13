@@ -32,8 +32,12 @@ export const AppProvider = ({ children }) => {
   const refreshDbState = useCallback(async () => {
     try {
       const db = await mockDb.getDb();
-      setDbState(db);
-      return db; // return so callers can use the fresh data
+      // Merge SMS credentials from localStorage (they aren't in Supabase)
+      const savedSms = localStorage.getItem('coupon_sms_settings');
+      const smsFields = savedSms ? JSON.parse(savedSms) : {};
+      const merged = { ...db, settings: { ...db.settings, ...smsFields } };
+      setDbState(merged);
+      return merged;
     } catch (e) {
       console.error('Failed to load DB:', e);
       showToast('Database connection error');
@@ -377,8 +381,29 @@ export const AppProvider = ({ children }) => {
   };
 
   const updateSettings = async (settings) => {
-    try { await mockDb.updateSettings(settings, currentUser?.id || 'admin'); await refreshDbState(); showToast('Settings saved'); }
-    catch (e) { showToast(`Error: ${e.message}`); }
+    try {
+      // Save non-SMS fields to Supabase as before
+      await mockDb.updateSettings(settings, currentUser?.id || 'admin');
+
+      // SMS credentials are API keys — store them in localStorage
+      // (Supabase settings table doesn't have these columns)
+      const smsFields = {
+        smsProvider:      settings.smsProvider      || 'twilio',
+        twilioAccountSid: settings.twilioAccountSid || '',
+        twilioAuthToken:  settings.twilioAuthToken  || '',
+        twilioFromNumber: settings.twilioFromNumber || '',
+        msegatUserName:   settings.msegatUserName   || '',
+        msegatApiKey:     settings.msegatApiKey     || '',
+        msegatSenderName: settings.msegatSenderName || '',
+      };
+      localStorage.setItem('coupon_sms_settings', JSON.stringify(smsFields));
+
+      // Refresh from Supabase then merge SMS fields back in
+      const freshDb = await mockDb.getDb();
+      setDbState({ ...freshDb, settings: { ...freshDb.settings, ...smsFields } });
+
+      showToast('Settings saved');
+    } catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   return (

@@ -13,7 +13,24 @@ const mapCoupon = (r) => r ? ({ id: r.id, code: r.code, profileId: r.profile_id,
 const mapWallet = (r) => r ? ({ id: r.id, ownerId: r.owner_id, ownerType: r.owner_type, siteId: r.site_id, balance: Number(r.balance) }) : null;
 const mapTransaction = (r) => r ? ({ id: r.id, fromWalletId: r.from_wallet_id, toWalletId: r.to_wallet_id, amount: Number(r.amount), type: r.type, siteId: r.site_id, relatedTransactionId: r.related_transaction_id, remarks: r.remarks, createdByUserId: r.created_by_user_id, timestamp: r.timestamp }) : null;
 const mapAuditLog = (r) => r ? ({ id: r.id, userId: r.user_id, action: r.action, details: r.details, timestamp: r.timestamp }) : null;
-const mapSettings = (r) => r ? ({ lowStockThreshold: r.low_stock_threshold, telegramWebhookUrl: r.telegram_webhook_url, whatsappNotificationEnabled: r.whatsapp_notification_enabled, twoFactorEnabled: r.two_factor_enabled }) : { lowStockThreshold: 5, telegramWebhookUrl: '', whatsappNotificationEnabled: false, twoFactorEnabled: false };
+const mapSettings = (r) => r ? ({
+  lowStockThreshold: r.low_stock_threshold,
+  telegramWebhookUrl: r.telegram_webhook_url,
+  whatsappNotificationEnabled: r.whatsapp_notification_enabled,
+  twoFactorEnabled: r.two_factor_enabled,
+  // SMS gateway
+  smsProvider:       r.sms_provider       || 'twilio',
+  twilioAccountSid:  r.twilio_account_sid || '',
+  twilioAuthToken:   r.twilio_auth_token  || '',
+  twilioFromNumber:  r.twilio_from_number || '',
+  msegatUserName:    r.msegat_user_name   || '',
+  msegatApiKey:      r.msegat_api_key     || '',
+  msegatSenderName:  r.msegat_sender_name || '',
+}) : {
+  lowStockThreshold: 5, telegramWebhookUrl: '', whatsappNotificationEnabled: false, twoFactorEnabled: false,
+  smsProvider: 'twilio', twilioAccountSid: '', twilioAuthToken: '', twilioFromNumber: '',
+  msegatUserName: '', msegatApiKey: '', msegatSenderName: '',
+};
 
 export const getDb = async () => {
   const [
@@ -307,7 +324,20 @@ export const reverseTransaction = async (transactionId, reversedByUserId, reason
 };
 
 export const updateSettings = async (settings, currentUserId) => {
-  await supabase.from('settings').update({ low_stock_threshold: settings.lowStockThreshold, telegram_webhook_url: settings.telegramWebhookUrl, whatsapp_notification_enabled: settings.whatsappNotificationEnabled, two_factor_enabled: settings.twoFactorEnabled }).eq('id', 1);
+  await supabase.from('settings').update({
+    low_stock_threshold:          settings.lowStockThreshold,
+    telegram_webhook_url:         settings.telegramWebhookUrl,
+    whatsapp_notification_enabled: settings.whatsappNotificationEnabled,
+    two_factor_enabled:           settings.twoFactorEnabled,
+    // SMS gateway
+    sms_provider:       settings.smsProvider       || 'twilio',
+    twilio_account_sid: settings.twilioAccountSid  || '',
+    twilio_auth_token:  settings.twilioAuthToken   || '',
+    twilio_from_number: settings.twilioFromNumber  || '',
+    msegat_user_name:   settings.msegatUserName    || '',
+    msegat_api_key:     settings.msegatApiKey      || '',
+    msegat_sender_name: settings.msegatSenderName  || '',
+  }).eq('id', 1);
   await logAction(currentUserId || 'admin', 'SETTINGS_CHANGE', 'Updated system configuration');
 };
 
