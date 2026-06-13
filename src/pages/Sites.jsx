@@ -3,10 +3,11 @@ import { useApp } from '../context/AppContext';
 import { Building2, Plus, MapPin, Users, CheckCircle2, UserPlus, Trash2, Layers, MessageSquare } from 'lucide-react';
 
 export const Sites = () => {
-  const { db, currentUser, addSite, addUser, unlinkUserFromSite, updateSitePrice, deleteSite, assignProfileToSite, unassignProfileFromSite, updateSiteSmsEnabled, showToast } = useApp();
+  const { db, currentUser, addSite, addUser, unlinkUserFromSite, linkUserToSite, updateSitePrice, deleteSite, assignProfileToSite, unassignProfileFromSite, updateSiteSmsEnabled, showToast } = useApp();
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteLoc, setNewSiteLoc] = useState('');
   const [confirmDeleteSiteId, setConfirmDeleteSiteId] = useState(null);
+  const [linking, setLinking] = useState(false);
 
   // User assignment form states
   const [targetUserId, setTargetUserId] = useState('');
@@ -23,26 +24,31 @@ export const Sites = () => {
     setNewSiteLoc('');
   };
 
-  const handleAssignUser = (e) => {
+  const handleAssignUser = async (e) => {
     e.preventDefault();
     if (!targetUserId || !targetSiteId) {
       showToast('Select user and site');
       return;
     }
 
-    const dbInst = JSON.parse(localStorage.getItem('coupon_system_db'));
-    // Check if already assigned
-    const exists = dbInst.userSites.some(us => us.userId === targetUserId && us.siteId === targetSiteId);
+    // Check duplicate using context db state (which is Supabase-backed)
+    const exists = db.userSites.some(
+      (us) => us.userId === targetUserId && us.siteId === targetSiteId
+    );
     if (exists) {
       showToast('User already assigned to this site');
       return;
     }
 
-    dbInst.userSites.push({ userId: targetUserId, siteId: targetSiteId });
-    // Save back to db and refresh context
-    localStorage.setItem('coupon_system_db', JSON.stringify(dbInst));
-    showToast('User assigned to site successfully');
-    window.location.reload(); // Quick refresh to reload all context state
+    setLinking(true);
+    try {
+      // linkUserToSite saves to Supabase via mockDb and refreshes context state
+      await linkUserToSite(targetUserId, targetSiteId);
+      setTargetUserId('');
+      setTargetSiteId('');
+    } finally {
+      setLinking(false);
+    }
   };
 
   // Group user assignments by site
@@ -144,8 +150,8 @@ export const Sites = () => {
                 </select>
               </div>
               <div style={{ gridColumn: 'span 2', textAlign: 'right' }}>
-                <button type="submit" className="action-btn btn-brand-purple">
-                  <UserPlus size={14} /> Link Member
+                <button type="submit" className="action-btn btn-brand-purple" disabled={linking}>
+                  <UserPlus size={14} /> {linking ? 'Linking...' : 'Link Member'}
                 </button>
               </div>
             </form>

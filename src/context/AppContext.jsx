@@ -459,6 +459,16 @@ export const AppProvider = ({ children }) => {
     } catch (e) { showToast(`Error: ${e.message}`); }
   };
 
+  const resetDatabase = async () => {
+    try {
+      await mockDb.resetDb();
+      localStorage.removeItem('coupon_session_user');
+      await refreshDbState();
+      setCurrentUser(null);
+      showToast('Database reset successfully');
+    } catch (e) { showToast(`Error resetting database: ${e.message}`); throw e; }
+  };
+
   return (
     <AppContext.Provider value={{
       db: dbState, currentUser, appLoading: loading, refreshDbState, loginUser, logoutUser,
@@ -472,7 +482,7 @@ export const AppProvider = ({ children }) => {
       reverseTransaction, importCoupons, addSite, addCouponProfile, addUser,
       deleteUser, unlinkUserFromSite, linkUserToSite, deleteSite, deleteCoupon,
       deleteCouponProfile, bulkDeleteCoupons,
-      walletAdjustment, updateSettings, updateSiteSmsEnabled
+      walletAdjustment, updateSettings, updateSiteSmsEnabled, resetDatabase
     }}>
       {children}
     </AppContext.Provider>

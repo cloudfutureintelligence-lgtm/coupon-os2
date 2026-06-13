@@ -2,8 +2,14 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Settings as SettingsIcon, AlertTriangle, MessageSquare, ShieldCheck, Smartphone } from 'lucide-react';
 
+const RESET_PASSWORD = '9495471187';
+
 export const Settings = () => {
-  const { db, updateSettings, showToast } = useApp();
+  const { db, updateSettings, showToast, resetDatabase } = useApp();
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [resetting, setResetting] = useState(false);
 
   const [threshold, setThreshold] = useState(db.settings.lowStockThreshold || 5);
   const [telegramUrl, setTelegramUrl] = useState(db.settings.telegramWebhookUrl || '');
@@ -18,6 +24,22 @@ export const Settings = () => {
   const [msegatUserName, setMsegatUserName]         = useState(db.settings.msegatUserName || '');
   const [msegatApiKey, setMsegatApiKey]             = useState(db.settings.msegatApiKey || '');
   const [msegatSenderName, setMsegatSenderName]     = useState(db.settings.msegatSenderName || '');
+
+  const handleConfirmReset = async () => {
+    if (resetPassword !== RESET_PASSWORD) {
+      setResetError('Incorrect password. Please try again.');
+      return;
+    }
+    setResetting(true);
+    try {
+      await resetDatabase();
+      setShowResetModal(false);
+    } catch (e) {
+      setResetError('Reset failed: ' + e.message);
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const handleSave = (e) => {
     e.preventDefault();
@@ -38,6 +60,7 @@ export const Settings = () => {
   };
 
   return (
+    <>
     <div style={{ maxWidth: '600px' }}>
       {/* Page Header */}
       <div className="page-header-row">
@@ -221,11 +244,9 @@ export const Settings = () => {
                   type="button" 
                   className="action-btn btn-brand-red"
                   onClick={() => {
-                    if (window.confirm("Are you absolutely sure you want to reset the database? This will delete all sites, users, and coupons, and log you out.")) {
-                      localStorage.removeItem('coupon_system_db');
-                      localStorage.removeItem('coupon_session_user');
-                      window.location.reload();
-                    }
+                    setResetPassword('');
+                    setResetError('');
+                    setShowResetModal(true);
                   }}
                 >
                   Reset CouponOS Database
@@ -245,5 +266,70 @@ export const Settings = () => {
         </div>
       </div>
     </div>
+
+    {/* Reset Password Modal */}
+    {showResetModal && (
+      <div style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
+      }}>
+        <div style={{
+          background: 'var(--surface)', borderRadius: '12px', padding: '2rem',
+          width: '100%', maxWidth: '400px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+            <div style={{ padding: '0.5rem', background: 'var(--red-light)', color: 'var(--red)', borderRadius: '8px' }}>
+              <AlertTriangle size={20} />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text)' }}>Confirm Database Reset</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>This action is irreversible</div>
+            </div>
+          </div>
+
+          <p style={{ fontSize: '0.82rem', color: 'var(--text-2)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+            All sites, users, coupons, transactions, and logs will be permanently deleted.
+            Enter the admin password to continue.
+          </p>
+
+          <div className="form-input-wrapper" style={{ marginBottom: '0.75rem' }}>
+            <label className="form-field-label">Admin Password</label>
+            <input
+              type="password"
+              className="text-input-field"
+              placeholder="Enter password"
+              value={resetPassword}
+              onChange={(e) => { setResetPassword(e.target.value); setResetError(''); }}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmReset(); }}
+            />
+            {resetError && (
+              <div style={{ color: 'var(--red)', fontSize: '0.78rem', marginTop: '0.4rem' }}>{resetError}</div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              className="action-btn"
+              style={{ background: 'var(--surface-2)', color: 'var(--text)' }}
+              onClick={() => setShowResetModal(false)}
+              disabled={resetting}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="action-btn btn-brand-red"
+              onClick={handleConfirmReset}
+              disabled={resetting}
+            >
+              {resetting ? 'Resetting...' : 'Reset Database'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 };
