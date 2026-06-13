@@ -21,14 +21,23 @@ export const Dashboard = ({ setActivePage }) => {
 
   if (!currentUser) return null;
 
-  // Helpers to calculate data
+  // ── Determine which sites this user can access ────────────────────────────
+  const GLOBAL_ROLES = ['Admin', 'Accountant', 'Owner', 'Manager'];
+  const userAccessibleSiteIds = GLOBAL_ROLES.includes(currentUser.role)
+    ? db.sites.map(s => s.id)
+    : (db.userSites || []).filter(us => us.userId === currentUser.id).map(us => us.siteId);
+
+  // Pre-filter coupons to only this user's accessible sites (profile scoping)
+  const profileCoupons = db.coupons.filter(c => userAccessibleSiteIds.includes(c.siteId));
+
+  // Then apply the selected site filter on top
   const filterBySite = (items, key = 'siteId') => {
     if (selectedSiteId === 'all') return items;
     return items.filter(item => item[key] === selectedSiteId);
   };
 
   // 1. Data Aggregation
-  const coupons = db.coupons;
+  const coupons = profileCoupons;
   const siteCoupons = filterBySite(coupons);
 
   const totalCouponsCount = siteCoupons.length;
@@ -68,6 +77,130 @@ export const Dashboard = ({ setActivePage }) => {
   const superStaffIds = new Set(db.users.filter(u => u.role === 'Super Staff').map(u => u.id));
   const superCollectionWallets = wallets.filter(w => w.ownerType === 'USER_COLLECTION' && superStaffIds.has(w.ownerId));
   const superCollectedTotal = superCollectionWallets.reduce((sum, w) => sum + w.balance, 0);
+
+  // ═══════════════════════════════════════════
+  // PROFILE STOCK BREAKDOWN (shown when a specific site is selected)
+  // ═══════════════════════════════════════════
+  const renderProfileStockBreakdown = () => {
+    if (selectedSiteId === 'all') return null;
+
+    const site = db.sites.find(s => s.id === selectedSiteId);
+    if (!site) return null;
+
+    // Get profiles that have any coupons at this site
+    const profileIds = [...new Set(siteCoupons.map(c => c.profileId))];
+    const profiles = db.couponProfiles.filter(p => profileIds.includes(p.id));
+
+    if (profiles.length === 0) return (
+      <div className="ui-card" style={{ marginBottom: '1.25rem' }}>
+        <div className="ui-card-header">
+          <span className="ui-card-title">
+            <Ticket size={14} style={{ marginRight: '0.4rem', verticalAlign: 'middle' }} />
+            Stock by Profile — {site.name}
+          </span>
+        </div>
+        <div className="empty-view-state">
+          <div className="empty-view-title">No stock found for this site</div>
+        </div>
+      </div>
+    );
+
+    return (
+      <div className="ui-card" style={{ marginBottom: '1.25rem' }}>
+        <div className="ui-card-header">
+          <span className="ui-card-title">
+            <Ticket size={14} style={{ marginRight: '0.4rem', verticalAlign: 'middle' }} />
+            Stock by Profile — {site.name}
+          </span>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>
+            {profiles.length} profile{profiles.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+        <div className="ui-card-body" style={{ padding: 0 }}>
+          {profiles.map((profile, index) => {
+            const profCoupons = siteCoupons.filter(c => c.profileId === profile.id);
+            const avail    = profCoupons.filter(c => c.status === 'Available').length;
+            const assigned = profCoupons.filter(c => c.status === 'Assigned').length;
+            const sold     = profCoupons.filter(c => c.status === 'Sold').length;
+            const total    = profCoupons.length;
+            const availPct = total > 0 ? Math.round((avail / total) * 100) : 0;
+            const isLow    = avail > 0 && avail < (db.settings?.lowStockThreshold || 5);
+            const isEmpty  = avail === 0;
+
+            return (
+              <div
+                key={profile.id}
+                style={{
+                  padding: '0.9rem 1.25rem',
+                  borderBottom: index < profiles.length - 1 ? '1px solid var(--border)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '1rem',
+                  flexWrap: 'wrap',
+                }}
+              >
+                {/* Profile name + status badge */}
+                <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)' }}>
+                      {profile.name}
+                    </span>
+                    {isEmpty && (
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--red)', background: 'var(--red-light)', padding: '1px 6px', borderRadius: '99px' }}>
+                        OUT
+                      </span>
+                    )}
+                    {isLow && !isEmpty && (
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--yellow)', background: 'var(--yellow-light)', padding: '1px 6px', borderRadius: '99px' }}>
+                        LOW
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginTop: '2px' }}>
+                    {[profile.validity, profile.dataLimit].filter(Boolean).join(' · ') || 'No details'}
+                  </div>
+                </div>
+
+                {/* Available progress bar */}
+                <div style={{ flex: '2 1 140px', minWidth: '100px' }}>
+                  <div style={{ height: '6px', background: 'var(--border)', borderRadius: '99px', overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${availPct}%`,
+                      background: isEmpty ? 'var(--red)' : isLow ? 'var(--yellow)' : 'var(--green)',
+                      borderRadius: '99px',
+                      transition: 'width 0.4s',
+                    }} />
+                  </div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', marginTop: '3px' }}>
+                    {availPct}% available of {total} total
+                  </div>
+                </div>
+
+                {/* Stat chips */}
+                <div style={{ display: 'flex', gap: '1.25rem', flexShrink: 0 }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: isEmpty ? 'var(--red)' : isLow ? 'var(--yellow)' : 'var(--green)' }}>
+                      {avail}
+                    </div>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>Available</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--blue)' }}>{assigned}</div>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>Assigned</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--purple)' }}>{sold}</div>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>Sold</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   // ═══════════════════════════════════════════
   // STATS CARD COMPONENT
@@ -120,6 +253,8 @@ export const Dashboard = ({ setActivePage }) => {
           <StatCard label="Outstanding in Wallets" value={`${totalPendingCollection} AED`} sub="Held by sales staff" icon={Wallet} color="var(--yellow)" bg="var(--yellow-light)" />
           <StatCard label="Active Sites (Tenants)" value={activeSitesCount} sub="Across UAE regions" icon={MapPin} color="var(--blue)" bg="var(--blue-light)" />
         </div>
+
+        {renderProfileStockBreakdown()}
 
         <div className="layout-grid-columns-2">
           {/* Revenue Chart View */}
@@ -296,6 +431,8 @@ export const Dashboard = ({ setActivePage }) => {
           <StatCard label="Pending Collections" value={`${totalPendingCollection} AED`} sub="Cash sitting in staff wallets" icon={Wallet} color="var(--yellow)" bg="var(--yellow-light)" />
         </div>
 
+        {renderProfileStockBreakdown()}
+
         {renderMonthlySalesOverview(ownerSoldCoupons)}
 
         <div className="ui-card" style={{ marginTop: '1.25rem' }}>
@@ -344,6 +481,8 @@ export const Dashboard = ({ setActivePage }) => {
           <StatCard label="Sold Coupons" value={soldCount} sub="Total site activations" icon={TrendingUp} color="var(--purple)" bg="var(--purple-light)" />
           <StatCard label="Total Site Revenue" value={`${totalRevenue} AED`} sub="From site sales" icon={DollarSign} color="var(--green)" bg="var(--green-light)" />
         </div>
+
+        {renderProfileStockBreakdown()}
 
         {renderMonthlySalesOverview(managerSoldCoupons)}
 
@@ -405,6 +544,8 @@ export const Dashboard = ({ setActivePage }) => {
           <StatCard label="Site Pool Available Stock" value={availableSiteStock} sub="Ready to be sold" icon={Ticket} color="var(--purple)" bg="var(--purple-light)" />
           <StatCard label="Active Staff" value={db.users.filter(u => u.role === 'Staff').length} sub="Under your collection" icon={Users} color="var(--blue)" bg="var(--blue-light)" />
         </div>
+
+        {renderProfileStockBreakdown()}
       </>
     );
   };
@@ -438,6 +579,8 @@ export const Dashboard = ({ setActivePage }) => {
           <StatCard label="Sales Today" value={mySalesToday.length} sub="Coupons activated today" icon={CheckCircle2} color="var(--purple)" bg="var(--purple-light)" />
           <StatCard label="Revenue Today" value={`${mySalesToday.reduce((sum, c) => sum + c.salePrice, 0)} AED`} sub="Gross value today" icon={DollarSign} color="var(--green)" bg="var(--green-light)" />
         </div>
+
+        {renderProfileStockBreakdown()}
 
         <div className="ui-card">
           <div className="ui-card-header">
