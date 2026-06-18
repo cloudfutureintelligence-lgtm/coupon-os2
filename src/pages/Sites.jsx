@@ -1,13 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Building2, Plus, MapPin, Users, CheckCircle2, UserPlus, Trash2, Layers, MessageSquare } from 'lucide-react';
+import { Building2, Plus, MapPin, Users, CheckCircle2, UserPlus, Trash2, Layers, MessageSquare, CalendarClock, RotateCcw, Lock } from 'lucide-react';
+
+// datetime-local inputs need "YYYY-MM-DDTHH:mm" in LOCAL time
+const toDatetimeLocalValue = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 export const Sites = () => {
-  const { db, currentUser, addSite, addUser, unlinkUserFromSite, linkUserToSite, updateSitePrice, deleteSite, assignProfileToSite, unassignProfileFromSite, updateSiteSmsEnabled, showToast } = useApp();
+  const { db, currentUser, addSite, addUser, unlinkUserFromSite, linkUserToSite, updateSitePrice, deleteSite, assignProfileToSite, unassignProfileFromSite, updateSiteSmsEnabled, updateSiteSubscription, isSiteActive, showToast } = useApp();
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteLoc, setNewSiteLoc] = useState('');
   const [confirmDeleteSiteId, setConfirmDeleteSiteId] = useState(null);
   const [linking, setLinking] = useState(false);
+
+  // Per-site uncontrolled refs for the subscription expiry datetime input
+  const subExpiryRefs = useRef({});
 
   // User assignment form states
   const [targetUserId, setTargetUserId] = useState('');
@@ -49,6 +60,25 @@ export const Sites = () => {
     } finally {
       setLinking(false);
     }
+  };
+
+  // ── Subscription actions (Admin only) ──────────────────────────────────────
+  const handleSaveSubscription = async (siteId) => {
+    const val = subExpiryRefs.current[siteId]?.value;
+    if (!val) { showToast('Pick a date & time first'); return; }
+    await updateSiteSubscription(siteId, new Date(val).toISOString());
+  };
+
+  const handleRenewOneMonth = async (site) => {
+    const base = site.subscriptionExpiry && new Date(site.subscriptionExpiry) > new Date()
+      ? new Date(site.subscriptionExpiry)
+      : new Date();
+    base.setMonth(base.getMonth() + 1);
+    await updateSiteSubscription(site.id, base.toISOString());
+  };
+
+  const handleClearSubscription = async (siteId) => {
+    await updateSiteSubscription(siteId, null);
   };
 
   // Determine which sites to display based on role
@@ -180,7 +210,13 @@ export const Sites = () => {
                   <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text)' }}>{site.name}</span>
                 </div>
                 <div className="flex-align-items-center" style={{ gap: '0.5rem' }}>
-                  <span className="pill-badge badge-success">Active</span>
+                  {isSiteActive(site) ? (
+                    <span className="pill-badge badge-success">Active</span>
+                  ) : (
+                    <span className="pill-badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <Lock size={11} /> Expired
+                    </span>
+                  )}
                   {currentUser.role === 'Admin' && (
                     <button
                       onClick={() => setConfirmDeleteSiteId(site.id)}
@@ -197,6 +233,63 @@ export const Sites = () => {
                   <MapPin size={12} />
                   <span>{site.location}</span>
                 </div>
+
+                {/* Subscription status banner — shown to everyone when expired */}
+                {!isSiteActive(site) && (
+                  <div style={{ background: 'var(--red-light)', border: '1px solid var(--red)', borderRadius: 'var(--radius)', padding: '0.55rem 0.75rem', marginBottom: '0.75rem', fontSize: '0.78rem', color: 'var(--red)', fontWeight: 600 }}>
+                    Subscription expired on {new Date(site.subscriptionExpiry).toLocaleString()} — coupon sales & stock imports are paused.
+                  </div>
+                )}
+
+                {/* Subscription management — Admin only */}
+                {currentUser.role === 'Admin' && (
+                  <div style={{ background: 'var(--surface-2)', borderRadius: 'var(--radius)', padding: '0.6rem 0.75rem', marginBottom: '0.75rem' }}>
+                    <div className="flex-align-items-center flex-justify-space-between" style={{ marginBottom: '0.5rem' }}>
+                      <div className="flex-align-items-center" style={{ gap: '0.4rem' }}>
+                        <CalendarClock size={13} style={{ color: isSiteActive(site) ? 'var(--text-3)' : 'var(--red)' }} />
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>
+                          Subscription {site.subscriptionExpiry ? (isSiteActive(site) ? 'renews/expires' : 'expired') : ''}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '0.74rem', fontWeight: 700, color: isSiteActive(site) ? 'var(--text)' : 'var(--red)' }}>
+                        {site.subscriptionExpiry ? new Date(site.subscriptionExpiry).toLocaleString() : 'Lifetime access'}
+                      </span>
+                    </div>
+                    <div className="flex-align-items-center" style={{ gap: '0.4rem', flexWrap: 'wrap' }}>
+                      <input
+                        type="datetime-local"
+                        ref={(el) => { subExpiryRefs.current[site.id] = el; }}
+                        defaultValue={toDatetimeLocalValue(site.subscriptionExpiry)}
+                        style={{ flex: '1 1 170px', fontSize: '0.75rem', padding: '4px 6px', border: '1px solid var(--border)', borderRadius: '4px', background: 'var(--surface)', color: 'var(--text)' }}
+                      />
+                      <button
+                        className="action-btn btn-brand-blue"
+                        style={{ fontSize: '0.72rem', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                        onClick={() => handleSaveSubscription(site.id)}
+                      >
+                        Save
+                      </button>
+                      <button
+                        className="action-btn btn-outlined"
+                        style={{ fontSize: '0.72rem', padding: '4px 10px', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                        onClick={() => handleRenewOneMonth(site)}
+                        title="Extend by 1 month from now (or from current expiry, whichever is later)"
+                      >
+                        <RotateCcw size={11} /> +1 Month
+                      </button>
+                      {site.subscriptionExpiry && (
+                        <button
+                          className="action-btn btn-outlined"
+                          style={{ fontSize: '0.72rem', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                          onClick={() => handleClearSubscription(site.id)}
+                          title="Remove expiry — site never expires"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* SMS toggle — Admin only */}
                 {currentUser.role === 'Admin' && (

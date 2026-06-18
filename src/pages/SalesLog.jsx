@@ -177,7 +177,7 @@ export const SalesLog = () => {
     const headers = ['#', 'Coupon Code', 'Profile'];
     if (dropdownSites.length > 1) headers.push('Site');
     headers.push('Sold By', 'Role');
-    if (showRevenue) headers.push('Price (AED)');
+    if (showRevenue) headers.push('Price (AED)', 'Free Coupon');
     headers.push('Customer Name', 'Mobile', 'Date & Time');
 
     const rows = filtered.map((log, idx) => {
@@ -187,7 +187,7 @@ export const SalesLog = () => {
       const row = [idx + 1, log.code || '', profile?.name || log.profileId || ''];
       if (dropdownSites.length > 1) row.push(site?.name || '');
       row.push(seller?.name || '', seller?.role || '');
-      if (showRevenue) row.push(log.salePrice ?? '');
+      if (showRevenue) row.push(log.salePrice ?? '', log.isFree ? 'Yes' : 'No');
       row.push(log.customerName || '', log.customerPhone || '',
         log.soldAt ? new Date(log.soldAt).toLocaleString() : '');
       return row;
@@ -384,7 +384,11 @@ export const SalesLog = () => {
                         )}
                       </td>
                       {showRevenue && (
-                        <td style={{ fontWeight: 600, color: 'var(--green)' }}>{log.salePrice} AED</td>
+                        <td style={{ fontWeight: 600, color: 'var(--green)' }}>
+                          {log.isFree
+                            ? <span className="pill-badge badge-info">FREE</span>
+                            : `${log.salePrice} AED`}
+                        </td>
                       )}
                       <td>{log.customerName || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                       <td>{log.customerPhone || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>

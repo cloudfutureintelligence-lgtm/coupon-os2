@@ -63,7 +63,7 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
       items.push({ id: 'sales', label: 'Sales Records', icon: Receipt, group: 'People & Sales' });
       items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'People & Sales' });
       
-      items.push({ id: 'reports', label: 'Analytics Reports', icon: BarChart3, group: 'System Logs' });
+      items.push({ id: 'salesanalytics', label: 'Analytics Reports', icon: BarChart3, group: 'System Logs' });
       items.push({ id: 'audit', label: 'Audit Logs', icon: ShieldAlert, group: 'System Logs' });
       items.push({ id: 'settings', label: 'Settings', icon: Settings, group: 'System Logs' });
       items.push({ id: 'apiconsole', label: 'REST API Console', icon: Terminal, group: 'System Logs' });
@@ -77,8 +77,9 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
     }
 
     if (role === 'Manager') {
-      items.push({ id: 'sales', label: 'Sales Analytics', icon: Receipt, group: 'Monitoring' });
+      items.push({ id: 'sales', label: 'Sell Coupons', icon: Receipt, group: 'Monitoring' });
       items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'Monitoring' });
+      items.push({ id: 'salesanalytics', label: 'Sales Analytics', icon: BarChart3, group: 'Monitoring' });
       items.push({ id: 'collections', label: 'Cash Collections', icon: DollarSign, group: 'Monitoring' });
       items.push({ id: 'cashinhand', label: 'Cash In Hand', icon: Wallet, group: 'Monitoring' });
     }

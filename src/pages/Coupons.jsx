@@ -29,6 +29,7 @@ export const Coupons = () => {
     importCoupons,
     deleteCoupon,
     bulkDeleteCoupons,
+    isSiteActive,
     showToast 
   } = useApp();
 
@@ -345,7 +346,11 @@ export const Coupons = () => {
                     <td>{profile?.name || coupon.profileId}</td>
                     <td>{site?.name || '-'}</td>
                     <td>{coupon.cost} AED</td>
-                    <td style={{ fontWeight: 600, color: 'var(--green)' }}>{coupon.salePrice} AED</td>
+                    <td style={{ fontWeight: 600, color: 'var(--green)' }}>
+                      {coupon.isFree
+                        ? <span className="pill-badge badge-info">FREE</span>
+                        : `${coupon.salePrice} AED`}
+                    </td>
                     <td>
                       <span className={`pill-badge ${statusBadgeClass}`}>
                         {coupon.status}
@@ -486,6 +491,11 @@ export const Coupons = () => {
                           No profiles assigned to this site yet.
                         </span>
                       )}
+                      {manualSiteId && !isSiteActive(db.sites.find(s => s.id === manualSiteId)) && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--red)', marginTop: '0.25rem', display: 'block', fontWeight: 600 }}>
+                          Subscription expired for this site — renew it before adding stock.
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -568,6 +578,11 @@ export const Coupons = () => {
                           No profiles assigned to this site yet.
                         </span>
                       )}
+                      {csvSiteId && !isSiteActive(db.sites.find(s => s.id === csvSiteId)) && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--red)', marginTop: '0.25rem', display: 'block', fontWeight: 600 }}>
+                          Subscription expired for this site — renew it before importing stock.
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -634,6 +649,11 @@ export const Coupons = () => {
                       {apiSiteId && db.sitePrices?.filter(sp => sp.siteId === apiSiteId).length === 0 && (
                         <span style={{ fontSize: '0.72rem', color: 'var(--yellow)', marginTop: '0.25rem', display: 'block' }}>
                           No profiles assigned to this site yet.
+                        </span>
+                      )}
+                      {apiSiteId && !isSiteActive(db.sites.find(s => s.id === apiSiteId)) && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--red)', marginTop: '0.25rem', display: 'block', fontWeight: 600 }}>
+                          Subscription expired for this site — renew it before importing stock.
                         </span>
                       )}
                     </div>

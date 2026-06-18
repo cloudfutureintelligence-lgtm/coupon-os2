@@ -495,6 +495,11 @@ export const Dashboard = ({ setActivePage }) => {
             <h1 className="page-title-main">Manager Station</h1>
             <p className="page-subtitle">Track stock assignments, sales updates, and approve field activities</p>
           </div>
+          <div className="page-actions-group">
+            <button className="action-btn btn-brand-blue" onClick={() => setActivePage('sales')}>
+              <DollarSign size={16} /> Sell Coupon
+            </button>
+          </div>
         </div>
 
         <div className="metrics-grid">

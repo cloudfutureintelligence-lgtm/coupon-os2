@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck } from 'lucide-react';
+import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck, Gift, Lock } from 'lucide-react';
 import { sendCouponSms, normalisePhone, isAllowedForProvider } from '../utils/smsService';
 import { SalesAnalyticsPanel } from '../components/SalesAnalyticsPanel';
 
@@ -34,7 +34,7 @@ const isInRange = (isoStr, from, to) => {
 };
 
 export const Sales = () => {
-  const { db, currentUser, selectedSiteId, sellCoupon, showToast } = useApp();
+  const { db, currentUser, selectedSiteId, sellCoupon, showToast, isSiteActive } = useApp();
 
   // POS state
   const [selectedProfileId, setSelectedProfileId] = useState('all');
@@ -43,6 +43,8 @@ export const Sales = () => {
   const [custName, setCustName]                   = useState('');
   const [custPhone, setCustPhone]                 = useState('');
   const [remarks, setRemarks]                     = useState('');
+  // Manager-only: mark this sale as a free coupon (price forced to 0)
+  const [isFreeCoupon, setIsFreeCoupon]           = useState(false);
 
   // Duplicate-click guard
   const [isSelling, setIsSelling]   = useState(false);
@@ -66,9 +68,13 @@ export const Sales = () => {
   if (!currentUser) return null;
 
   const role     = currentUser.role;
-  const isSeller = ['Staff', 'Super Staff'].includes(role);
+  const isSeller = ['Staff', 'Super Staff', 'Manager'].includes(role);
+  const isManager = role === 'Manager';
   const showLog  = ['Staff', 'Super Staff', 'Manager', 'Owner', 'Accountant', 'Admin'].includes(role);
   const showAnalytics = ['Manager', 'Owner', 'Accountant', 'Admin'].includes(role);
+
+  const currentSite = db.sites.find(s => s.id === selectedSiteId);
+  const siteSubscriptionActive = selectedSiteId === 'all' ? true : isSiteActive(currentSite);
 
   // ── POS helpers ────────────────────────────────────────────────────────────
   const getProfileStock = (profileId) =>
@@ -86,13 +92,15 @@ export const Sales = () => {
     saleInFlightRef.current = true;
     setIsSelling(true);
     try {
-      const res = await sellCoupon(selectedSiteId, targetProfile.id, custName, custPhone, remarks);
+      const freeSale = isManager && isFreeCoupon;
+      const res = await sellCoupon(selectedSiteId, targetProfile.id, custName, custPhone, remarks, freeSale);
       if (res && res.success) {
         const optimistic = {
           code:           res.couponCode,
           profileId:      targetProfile.id,
           siteId:         selectedSiteId,
-          salePrice:      getProfilePrice(targetProfile.id),
+          salePrice:      freeSale ? 0 : getProfilePrice(targetProfile.id),
+          isFree:         freeSale,
           customerName:   custName,
           customerPhone:  custPhone,
           soldAt:         new Date().toISOString(),
@@ -221,7 +229,15 @@ export const Sales = () => {
                     <td>{profile?.name || log.profileId}</td>
                     <td>{site?.name || '-'}</td>
                     {role !== 'Staff' && <td>{seller?.name || log.soldByUserId || '-'}</td>}
-                    <td style={{ fontWeight: 600, color: 'var(--green)' }}>{log.salePrice} AED</td>
+                    <td style={{ fontWeight: 600, color: 'var(--green)' }}>
+                      {log.isFree ? (
+                        <span className="pill-badge badge-info" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <Gift size={11} /> FREE
+                        </span>
+                      ) : (
+                        `${log.salePrice} AED`
+                      )}
+                    </td>
                     <td>{log.customerName || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                     <td>{log.customerPhone || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                     <td style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>
@@ -237,7 +253,7 @@ export const Sales = () => {
     </div>
   );
 
-  // ── POS view (Staff + Super Staff) ─────────────────────────────────────────
+  // ── POS view (Staff + Super Staff + Manager) ───────────────────────────────
   const renderPOSView = () => {
     // Only show profiles assigned to the current site (have a sitePrices entry)
     const assignedProfileIds = new Set(
@@ -245,6 +261,27 @@ export const Sales = () => {
     );
     let list = db.couponProfiles.filter(p => assignedProfileIds.has(p.id));
     if (selectedProfileId !== 'all') list = list.filter(p => p.id === selectedProfileId);
+
+    // Subscription gate — selling (and everything else on this page) stops for an expired site
+    if (!siteSubscriptionActive) {
+      return (
+        <>
+          <div className="page-header-row">
+            <div>
+              <h1 className="page-title-main">Retail Point of Sale</h1>
+              <p className="page-subtitle">Select a package profile to sell to a retail customer</p>
+            </div>
+          </div>
+          <div className="empty-view-state" style={{ padding: '3rem 1.5rem', border: '1px dashed var(--red)', borderRadius: 'var(--radius)', background: 'var(--red-light)' }}>
+            <Lock size={36} style={{ color: 'var(--red)', marginBottom: '0.5rem' }} />
+            <div className="empty-view-title" style={{ color: 'var(--red)' }}>Subscription Expired</div>
+            <div className="empty-view-description">
+              {currentSite?.name || 'This site'}'s subscription has expired. Coupon sales are paused until an Admin renews it from the Sites page.
+            </div>
+          </div>
+        </>
+      );
+    }
 
     return (
       <>
@@ -297,7 +334,7 @@ export const Sales = () => {
                       <button
                         className="action-btn btn-brand-blue btn-sm"
                         disabled={stockCount === 0}
-                        onClick={() => { setTargetProfile(profile); setCustName(''); setCustPhone(''); setRemarks(''); setSaleModalOpen(true); }}
+                        onClick={() => { setTargetProfile(profile); setCustName(''); setCustPhone(''); setRemarks(''); setIsFreeCoupon(false); setSaleModalOpen(true); }}
                       >
                         {stockCount > 0 ? 'Activate Sale' : 'Out of Stock'}
                       </button>
@@ -325,9 +362,56 @@ export const Sales = () => {
                     </div>
                     <div className="flex-justify-space-between" style={{ fontSize: '0.82rem' }}>
                       <span>Price Charged:</span>
-                      <strong style={{ color: 'var(--green)' }}>{getProfilePrice(targetProfile.id)} AED</strong>
+                      {isFreeCoupon ? (
+                        <strong style={{ color: 'var(--blue)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <Gift size={13} /> FREE (0 AED)
+                        </strong>
+                      ) : (
+                        <strong style={{ color: 'var(--green)' }}>{getProfilePrice(targetProfile.id)} AED</strong>
+                      )}
                     </div>
                   </div>
+
+                  {/* Free Coupon toggle — Manager-only */}
+                  {isManager && (
+                    <div
+                      className="flex-align-items-center flex-justify-space-between"
+                      style={{
+                        background: isFreeCoupon ? 'var(--blue-light)' : 'var(--surface-2)',
+                        border: `1px solid ${isFreeCoupon ? 'var(--blue)' : 'var(--border)'}`,
+                        borderRadius: 'var(--radius)', padding: '0.6rem 0.75rem', marginBottom: '1.1rem',
+                      }}
+                    >
+                      <div className="flex-align-items-center" style={{ gap: '0.45rem' }}>
+                        <Gift size={14} style={{ color: isFreeCoupon ? 'var(--blue)' : 'var(--text-3)' }} />
+                        <div>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: isFreeCoupon ? 'var(--blue)' : 'var(--text)', display: 'block' }}>
+                            Free Coupon
+                          </span>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-3)' }}>Manager only — sets price to 0 AED</span>
+                        </div>
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: isSelling ? 'default' : 'pointer' }}>
+                        <span style={{ fontSize: '0.72rem', color: isFreeCoupon ? 'var(--blue)' : 'var(--text-3)', fontWeight: 600 }}>
+                          {isFreeCoupon ? 'On' : 'Off'}
+                        </span>
+                        <div
+                          onClick={() => !isSelling && setIsFreeCoupon(!isFreeCoupon)}
+                          style={{
+                            width: 36, height: 20, borderRadius: 10, cursor: isSelling ? 'default' : 'pointer', transition: 'background 0.2s',
+                            background: isFreeCoupon ? 'var(--blue)' : 'var(--border)',
+                            position: 'relative', flexShrink: 0,
+                          }}
+                        >
+                          <div style={{
+                            position: 'absolute', top: 3, left: isFreeCoupon ? 19 : 3,
+                            width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s',
+                          }} />
+                        </div>
+                      </label>
+                    </div>
+                  )}
+
                   <div className="form-input-wrapper">
                     <label className="form-field-label">Customer Name (Optional)</label>
                     <input type="text" className="text-input-field" placeholder="e.g. John Doe" value={custName} onChange={e => setCustName(e.target.value)} disabled={isSelling} />
@@ -343,11 +427,13 @@ export const Sales = () => {
                 </div>
                 <div className="app-modal-footer">
                   <button type="button" className="action-btn btn-outlined" onClick={() => setSaleModalOpen(false)} disabled={isSelling}>Cancel</button>
-                  <button type="submit" className="action-btn btn-brand-green" disabled={isSelling}
+                  <button type="submit" className={`action-btn ${isFreeCoupon ? 'btn-brand-blue' : 'btn-brand-green'}`} disabled={isSelling}
                     style={{ minWidth: '190px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
                     {isSelling
                       ? <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Processing…</>
-                      : <><CheckCircle2 size={14} /> Complete & Credit Wallet</>}
+                      : isFreeCoupon
+                        ? <><Gift size={14} /> Issue Free Coupon</>
+                        : <><CheckCircle2 size={14} /> Complete & Credit Wallet</>}
                   </button>
                 </div>
               </form>
@@ -390,8 +476,8 @@ export const Sales = () => {
             <div className="app-modal-backdrop modal-open-state">
               <div className="app-modal-window" style={{ maxWidth: '420px' }}>
                 <div className="app-modal-header" style={{ borderBottom: 'none' }}>
-                  <span className="app-modal-title" style={{ display: 'block', width: '100%', textAlign: 'center', fontSize: '1.2rem', color: 'var(--green)' }}>
-                    ✓ Sale Completed Successfully
+                  <span className="app-modal-title" style={{ display: 'block', width: '100%', textAlign: 'center', fontSize: '1.2rem', color: pendingSale?.isFree ? 'var(--blue)' : 'var(--green)' }}>
+                    {pendingSale?.isFree ? '✓ Free Coupon Issued' : '✓ Sale Completed Successfully'}
                   </span>
                 </div>
                 <div className="app-modal-body" style={{ padding: '0.5rem 1.5rem 1.5rem 1.5rem' }}>
@@ -400,9 +486,14 @@ export const Sales = () => {
                   <p style={{ fontSize: '0.82rem', color: 'var(--text-2)', marginBottom: '1rem', textAlign: 'center' }}>
                     Share this code with the customer to activate their internet access:
                   </p>
-                  <div style={{ background: 'var(--surface-2)', padding: '1.25rem', borderRadius: 'var(--radius)', border: '2px dashed var(--green)', marginBottom: '1.25rem', textAlign: 'center' }}>
+                  <div style={{ background: 'var(--surface-2)', padding: '1.25rem', borderRadius: 'var(--radius)', border: `2px dashed ${pendingSale?.isFree ? 'var(--blue)' : 'var(--green)'}`, marginBottom: '1.25rem', textAlign: 'center' }}>
                     <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Access Code</span>
                     <strong className="td-monospaced" style={{ fontSize: '1.6rem', color: 'var(--text)', fontWeight: 800 }}>{soldCouponCode}</strong>
+                    {pendingSale?.isFree && (
+                      <span className="pill-badge badge-info" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.5rem' }}>
+                        <Gift size={11} /> FREE COUPON
+                      </span>
+                    )}
                   </div>
 
                   {/* SMS section — only if SMS is enabled for this site */}

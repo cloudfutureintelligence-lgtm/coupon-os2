@@ -4,12 +4,19 @@ import { supabase } from './supabase';
 const uid = () => 'id-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
 const txid = () => 'tx-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
 
-const mapSite = (r) => r ? ({ id: r.id, name: r.name, location: r.location, status: r.status, smsEnabled: r.sms_enabled !== false }) : null;
+const mapSite = (r) => r ? ({ id: r.id, name: r.name, location: r.location, status: r.status, smsEnabled: r.sms_enabled !== false, subscriptionExpiry: r.subscription_expiry || null }) : null;
 const mapProfile = (r) => r ? ({ id: r.id, name: r.name, validityDays: r.validity_days, price: r.price, salePrice: r.sale_price, costPrice: r.cost_price, description: r.description, status: r.status }) : null;
 const mapUser = (r) => r ? ({ id: r.id, username: r.username, password: r.password, role: r.role, name: r.name, twoFAEnabled: r.two_fa_enabled }) : null;
 const mapUserSite = (r) => r ? ({ userId: r.user_id, siteId: r.site_id }) : null;
 const mapSitePrice = (r) => r ? ({ siteId: r.site_id, profileId: r.profile_id, salePrice: r.sale_price, costPrice: r.cost_price }) : null;
-const mapCoupon = (r) => r ? ({ id: r.id, code: r.code, profileId: r.profile_id, siteId: r.site_id, cost: r.cost, salePrice: r.sale_price, status: r.status, soldByUserId: r.sold_by_user_id, customerName: r.customer_name, customerPhone: r.customer_phone, soldAt: r.sold_at, createdAt: r.created_at, history: r.coupon_history ? r.coupon_history.map(h => ({ action: h.action, details: h.details, user: h.user_id, timestamp: h.timestamp })) : [] }) : null;
+const mapCoupon = (r) => r ? ({ id: r.id, code: r.code, profileId: r.profile_id, siteId: r.site_id, cost: r.cost, salePrice: r.sale_price, isFree: !!r.is_free, status: r.status, soldByUserId: r.sold_by_user_id, customerName: r.customer_name, customerPhone: r.customer_phone, soldAt: r.sold_at, createdAt: r.created_at, history: r.coupon_history ? r.coupon_history.map(h => ({ action: h.action, details: h.details, user: h.user_id, timestamp: h.timestamp })) : [] }) : null;
+
+// A site whose subscription has lapsed should stop generating sales / receiving new
+// stock until an Admin renews it. No expiry set at all = never expires (legacy sites).
+export const isSiteSubscriptionActive = (site) => {
+  if (!site || !site.subscription_expiry) return true;
+  return new Date(site.subscription_expiry).getTime() > Date.now();
+};
 const mapWallet = (r) => r ? ({ id: r.id, ownerId: r.owner_id, ownerType: r.owner_type, siteId: r.site_id, balance: Number(r.balance) }) : null;
 const mapTransaction = (r) => r ? ({ id: r.id, fromWalletId: r.from_wallet_id, toWalletId: r.to_wallet_id, amount: Number(r.amount), type: r.type, siteId: r.site_id, relatedTransactionId: r.related_transaction_id, remarks: r.remarks, createdByUserId: r.created_by_user_id, timestamp: r.timestamp }) : null;
 const mapAuditLog = (r) => r ? ({ id: r.id, userId: r.user_id, action: r.action, details: r.details, timestamp: r.timestamp }) : null;
@@ -87,6 +94,17 @@ export const updateSiteSmsEnabled = async (siteId, enabled, currentUserId) => {
   await logAction(currentUserId, 'SITE_SMS_TOGGLE', `SMS ${enabled ? 'enabled' : 'disabled'} for site ${siteId}`);
 };
 
+// expiryIso = ISO timestamp string, or null to clear the expiry (lifetime access)
+export const updateSiteSubscription = async (siteId, expiryIso, currentUserId) => {
+  const { data: site } = await supabase.from('sites').select('name').eq('id', siteId).single();
+  const { error } = await supabase.from('sites').update({ subscription_expiry: expiryIso || null }).eq('id', siteId);
+  if (error) throw new Error(error.message);
+  const detail = expiryIso
+    ? `Set subscription for ${site?.name || siteId} to renew/expire on ${new Date(expiryIso).toLocaleString()}`
+    : `Cleared subscription expiry for ${site?.name || siteId} (lifetime access)`;
+  await logAction(currentUserId || 'admin', 'SITE_SUBSCRIPTION_UPDATE', detail);
+};
+
 export const deleteSite = async (siteId, currentUserId) => {
   const { data: site } = await supabase.from('sites').select('name').eq('id', siteId).single();
   const { error } = await supabase.from('sites').delete().eq('id', siteId);
@@ -141,7 +159,7 @@ export const addUser = async (user, siteIds = [], currentUserId) => {
   if (error) throw new Error(error.message);
   const wallets = [];
   if (user.role === 'Staff') { wallets.push({ id: 'w-'+id+'-sales', owner_id: id, owner_type: 'USER_SALES', balance: 0 }); }
-  else if (user.role === 'Super Staff') { wallets.push({ id: 'w-'+id+'-sales', owner_id: id, owner_type: 'USER_SALES', balance: 0 }); wallets.push({ id: 'w-'+id+'-collection', owner_id: id, owner_type: 'USER_COLLECTION', balance: 0 }); }
+  else if (user.role === 'Super Staff' || user.role === 'Manager') { wallets.push({ id: 'w-'+id+'-sales', owner_id: id, owner_type: 'USER_SALES', balance: 0 }); wallets.push({ id: 'w-'+id+'-collection', owner_id: id, owner_type: 'USER_COLLECTION', balance: 0 }); }
   else { wallets.push({ id: 'w-'+id+'-collection', owner_id: id, owner_type: 'USER_COLLECTION', balance: 0 }); }
   if (wallets.length) await supabase.from('wallets').insert(wallets);
   if (siteIds.length) await supabase.from('user_sites').insert(siteIds.map(sid => ({ user_id: id, site_id: sid })));
@@ -169,6 +187,12 @@ export const unlinkUserFromSite = async (userId, siteId, currentUserId) => {
 };
 
 export const importCoupons = async (csvLines, importedByUserId, siteId = null) => {
+  if (siteId) {
+    const { data: site } = await supabase.from('sites').select('name, subscription_expiry').eq('id', siteId).single();
+    if (!isSiteSubscriptionActive(site)) {
+      throw new Error('This site\'s subscription has expired. Renew it before importing more stock.');
+    }
+  }
   const { data: profiles } = await supabase.from('coupon_profiles').select('*');
   const { data: sitePrices } = await supabase.from('site_prices').select('*');
   const { data: existing } = await supabase.from('coupons').select('code');
@@ -209,17 +233,30 @@ export const deleteCoupon = async (couponId, currentUserId) => {
   await logAction(currentUserId || 'admin', 'COUPON_DELETION', 'Deleted coupon: ' + coupon?.code);
 };
 
-export const sellCoupon = async (siteId, profileId, soldByUserId, customerName, customerPhone, remarks) => {
+export const sellCoupon = async (siteId, profileId, soldByUserId, customerName, customerPhone, remarks, isFree = false) => {
+  // Step 0: Subscription gate — a site whose subscription has lapsed cannot sell coupons
+  const { data: site } = await supabase.from('sites').select('name, subscription_expiry').eq('id', siteId).single();
+  if (!isSiteSubscriptionActive(site)) {
+    throw new Error('This site\'s subscription has expired. Ask an Admin to renew it before selling coupons.');
+  }
+
+  // Step 0b: Only Managers may issue free coupons — enforce server-side too
+  if (isFree) {
+    const { data: seller } = await supabase.from('users').select('role').eq('id', soldByUserId).single();
+    if (!seller || seller.role !== 'Manager') throw new Error('Only Managers can issue free coupons');
+  }
+
   // Step 1: Find an available coupon
   const { data: coupons } = await supabase.from('coupons').select('*').eq('site_id', siteId).eq('profile_id', profileId).eq('status', 'Available').limit(1);
   if (!coupons || coupons.length === 0) throw new Error('No coupons available for this profile at this site');
   const coupon = coupons[0];
+  const effectivePrice = isFree ? 0 : Number(coupon.sale_price);
 
   // Step 2: Atomic status update + fetch both wallets in parallel
   const walletId = 'w-' + soldByUserId + '-sales';
   const [{ data: updated, error: updateError }, { data: ew }, { data: sw }] = await Promise.all([
     supabase.from('coupons')
-      .update({ status: 'Sold', sold_by_user_id: soldByUserId, customer_name: customerName || '', customer_phone: customerPhone || '', sold_at: new Date().toISOString() })
+      .update({ status: 'Sold', sold_by_user_id: soldByUserId, customer_name: customerName || '', customer_phone: customerPhone || '', sold_at: new Date().toISOString(), sale_price: effectivePrice, is_free: !!isFree })
       .eq('id', coupon.id)
       .eq('status', 'Available')
       .select(),
@@ -231,21 +268,24 @@ export const sellCoupon = async (siteId, profileId, soldByUserId, customerName, 
   const soldAt = updated[0].sold_at;
 
   // Step 3: Update wallets + insert history/transaction/log all in parallel
+  // (Free coupons move 0 AED, so wallets are effectively untouched but we still
+  //  ensure the sales wallet row exists for first-time sellers like Managers.)
   const txId = txid();
-  const newUserBalance = ew ? Number(ew.balance) + Number(coupon.sale_price) : Number(coupon.sale_price);
+  const newUserBalance = ew ? Number(ew.balance) + effectivePrice : effectivePrice;
+  const freeNote = isFree ? 'FREE COUPON (Manager-issued, 0 AED). ' : '';
   await Promise.all([
     ew
       ? supabase.from('wallets').update({ balance: newUserBalance }).eq('id', walletId)
-      : supabase.from('wallets').insert({ id: walletId, owner_id: soldByUserId, owner_type: 'USER_SALES', balance: coupon.sale_price }),
+      : supabase.from('wallets').insert({ id: walletId, owner_id: soldByUserId, owner_type: 'USER_SALES', balance: effectivePrice }),
     sw
-      ? supabase.from('wallets').update({ balance: Number(sw.balance) - Number(coupon.sale_price) }).eq('id', 'w-system')
+      ? supabase.from('wallets').update({ balance: Number(sw.balance) - effectivePrice }).eq('id', 'w-system')
       : Promise.resolve(),
-    supabase.from('coupon_history').insert({ coupon_id: coupon.id, action: 'SOLD', user_id: soldByUserId, details: 'Sold to ' + (customerName || 'Walk-in') + ' for ' + coupon.sale_price + ' AED. ' + (remarks || '') }),
-    supabase.from('transactions').insert({ id: txId, from_wallet_id: 'w-system', to_wallet_id: walletId, amount: coupon.sale_price, type: 'SALE', timestamp: soldAt, remarks: 'Coupon sold: ' + coupon.code, created_by_user_id: soldByUserId }),
-    logAction(soldByUserId, 'COUPON_SALE', 'Sold coupon ' + coupon.code + ' for ' + coupon.sale_price + ' AED. Customer: ' + (customerName || 'None')),
+    supabase.from('coupon_history').insert({ coupon_id: coupon.id, action: isFree ? 'SOLD_FREE' : 'SOLD', user_id: soldByUserId, details: freeNote + 'Sold to ' + (customerName || 'Walk-in') + ' for ' + effectivePrice + ' AED. ' + (remarks || '') }),
+    supabase.from('transactions').insert({ id: txId, from_wallet_id: 'w-system', to_wallet_id: walletId, amount: effectivePrice, type: 'SALE', timestamp: soldAt, remarks: freeNote + 'Coupon sold: ' + coupon.code, created_by_user_id: soldByUserId }),
+    logAction(soldByUserId, 'COUPON_SALE', freeNote + 'Sold coupon ' + coupon.code + ' for ' + effectivePrice + ' AED. Customer: ' + (customerName || 'None')),
   ]);
 
-  return { success: true, transactionId: txId, couponCode: coupon.code };
+  return { success: true, transactionId: txId, couponCode: coupon.code, isFree: !!isFree, salePrice: effectivePrice };
 };
 
 export const collectCashFromStaff = async (collectedByUserId, collectedFromUserId, amount, siteId, remarks) => {
@@ -379,24 +419,49 @@ export const resetDb = async () => {
 };
 
 // FIX 5: Collect from Manager (Owner and Accountant)
+// Managers can now sell coupons directly (their own '-sales' wallet) in addition to
+// collecting from Staff/Super Staff (their '-collection' wallet) — drain both, same
+// pattern used for Super Staff, so the collector sees the Manager's full balance.
 export const collectCashFromManager = async (collectedByUserId, collectedFromUserId, amount, siteId, remarks) => {
   const { data: collector } = await supabase.from('users').select('role').eq('id', collectedByUserId).single();
   const ALLOWED = ['Owner', 'Accountant'];
   if (!collector || !ALLOWED.includes(collector.role)) throw new Error('Insufficient permissions to collect from Manager');
-  const managerWalletId = 'w-' + collectedFromUserId + '-collection';
-  const { data: mgrWallet } = await supabase.from('wallets').select('balance').eq('id', managerWalletId).single();
-  if (!mgrWallet || Number(mgrWallet.balance) < amount) throw new Error('Insufficient balance: ' + (mgrWallet?.balance || 0) + ' AED');
-  // Collector wallet
+
+  const salesWalletId      = 'w-' + collectedFromUserId + '-sales';
+  const collectionWalletId = 'w-' + collectedFromUserId + '-collection';
+  const { data: salesWallet }      = await supabase.from('wallets').select('balance').eq('id', salesWalletId).single();
+  const { data: collectionWallet } = await supabase.from('wallets').select('balance').eq('id', collectionWalletId).single();
+  const salesBal      = salesWallet      ? Number(salesWallet.balance)      : 0;
+  const collectionBal = collectionWallet ? Number(collectionWallet.balance) : 0;
+  const combinedBalance = salesBal + collectionBal;
+  if (combinedBalance < amount) throw new Error('Insufficient balance: ' + combinedBalance + ' AED (sales: ' + salesBal + ', collected: ' + collectionBal + ')');
+
   const collectorWalletId = 'w-' + collectedByUserId + '-collection';
   const { data: collWallet } = await supabase.from('wallets').select('balance').eq('id', collectorWalletId).single();
-  await supabase.from('wallets').update({ balance: Number(mgrWallet.balance) - amount }).eq('id', managerWalletId);
+
+  let remaining = amount;
+  const timestamp = new Date().toISOString();
+  const baseTxId = txid();
+
+  if (salesBal > 0 && remaining > 0) {
+    const deduct = Math.min(salesBal, remaining);
+    await supabase.from('wallets').update({ balance: salesBal - deduct }).eq('id', salesWalletId);
+    remaining -= deduct;
+    await supabase.from('transactions').insert({ id: baseTxId + '-sales-debit', from_wallet_id: salesWalletId, to_wallet_id: collectorWalletId, amount: deduct, type: 'CASH_COLLECTION', timestamp, remarks: (remarks || 'Collected from Manager') + ' [own sales]', created_by_user_id: collectedByUserId });
+  }
+  if (collectionBal > 0 && remaining > 0) {
+    const deduct = Math.min(collectionBal, remaining);
+    await supabase.from('wallets').update({ balance: collectionBal - deduct }).eq('id', collectionWalletId);
+    remaining -= deduct;
+    await supabase.from('transactions').insert({ id: baseTxId + '-collection-debit', from_wallet_id: collectionWalletId, to_wallet_id: collectorWalletId, amount: deduct, type: 'CASH_COLLECTION', timestamp, remarks: (remarks || 'Collected from Manager') + ' [collected cash]', created_by_user_id: collectedByUserId });
+  }
+
   if (collWallet) { await supabase.from('wallets').update({ balance: Number(collWallet.balance) + amount }).eq('id', collectorWalletId); }
   else { await supabase.from('wallets').insert({ id: collectorWalletId, owner_id: collectedByUserId, owner_type: 'USER_COLLECTION', balance: amount }); }
-  const txId = txid();
-  await supabase.from('transactions').insert({ id: txId, from_wallet_id: managerWalletId, to_wallet_id: collectorWalletId, amount, type: 'CASH_COLLECTION', created_by_user_id: collectedByUserId, remarks: remarks || 'Collected ' + amount + ' AED from manager' });
+
   await supabase.from('cash_collections').insert({ id: uid(), collected_from_user_id: collectedFromUserId, collected_by_user_id: collectedByUserId, amount, site_id: siteId || null, remarks: remarks || '' });
-  await logAction(collectedByUserId, 'CASH_COLLECTION', 'Collected ' + amount + ' AED from Manager ' + collectedFromUserId);
-  return { success: true, transactionId: txId };
+  await logAction(collectedByUserId, 'CASH_COLLECTION', 'Collected ' + amount + ' AED from Manager ' + collectedFromUserId + ' (sales: ' + salesBal + ' + collected: ' + collectionBal + ')');
+  return { success: true, transactionId: baseTxId };
 };
 
 // FIX 5: Collect from Owner (Accountant only)

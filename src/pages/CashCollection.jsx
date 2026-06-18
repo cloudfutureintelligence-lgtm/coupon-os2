@@ -18,6 +18,8 @@ const ROLE_CAN_COLLECT_FROM = {
 
 // Wallet type per role (where their cash accumulates)
 // Staff sales go into USER_SALES wallet (w-{id}-sales)
+// Super Staff and Manager can also sell directly, accumulating a USER_SALES wallet,
+// in addition to their USER_COLLECTION wallet from collecting cash off others.
 // All other roles accumulate collections in USER_COLLECTION wallet (w-{id}-collection)
 const ROLE_WALLET_TYPE = {
   'Staff':       'USER_SALES',
@@ -107,9 +109,10 @@ export const CashCollection = () => {
   };
 
   const getWalletBalance = (userId, role) => {
-    // Super Staff has two wallets: own sales (-sales) + collected from Staff (-collection)
-    // Both are drained when someone collects from them, so show the combined total.
-    if (role === 'Super Staff') {
+    // Super Staff AND Manager can both accumulate two wallets: their own sales (-sales,
+    // from selling coupons directly) + cash collected from others (-collection).
+    // Both are drained together when someone collects from them, so show the combined total.
+    if (role === 'Super Staff' || role === 'Manager') {
       const sales      = db.wallets.find(w => w.id === 'w-' + userId + '-sales');
       const collection = db.wallets.find(w => w.id === 'w-' + userId + '-collection');
       return (sales?.balance || 0) + (collection?.balance || 0);

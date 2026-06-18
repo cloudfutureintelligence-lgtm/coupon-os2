@@ -127,6 +127,36 @@ export const AppProvider = ({ children }) => {
       });
     });
 
+    // ── 1b. Subscription expiry alerts (site scoped) ─────────────────────────
+    const subscriptionAlerts = [];
+    userSiteIds.forEach(siteId => {
+      const site = dbState.sites.find(s => s.id === siteId);
+      if (!site || !site.subscriptionExpiry) return;
+      const msLeft = new Date(site.subscriptionExpiry).getTime() - Date.now();
+      if (msLeft <= 0) {
+        subscriptionAlerts.push({
+          id: `sub-expired-${siteId}`,
+          timestamp: new Date().toISOString(),
+          type: 'WARNING',
+          message: `Subscription expired for ${site.name}. Coupon sales and imports are paused until an Admin renews it.`,
+          icon: 'fa-triangle-exclamation',
+          color: 'var(--red)',
+          bg: 'var(--red-light)',
+        });
+      } else if (msLeft <= 3 * 24 * 60 * 60 * 1000) {
+        const daysLeft = Math.max(1, Math.ceil(msLeft / (24 * 60 * 60 * 1000)));
+        subscriptionAlerts.push({
+          id: `sub-expiring-${siteId}`,
+          timestamp: new Date().toISOString(),
+          type: 'WARNING',
+          message: `Subscription for ${site.name} renews/expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`,
+          icon: 'fa-triangle-exclamation',
+          color: 'var(--yellow)',
+          bg: 'var(--yellow-light)',
+        });
+      }
+    });
+
     // ── 2. Recent activity logs — role-scoped, no LOGIN/LOGOUT/SALE events ───
     // Which roles' actions are visible to each role:
     //   Staff        → own logs only
@@ -181,7 +211,7 @@ export const AppProvider = ({ children }) => {
         };
       });
 
-    setNotifications([...lowStockAlerts, ...filteredLogs]);
+    setNotifications([...subscriptionAlerts, ...lowStockAlerts, ...filteredLogs]);
   }, [dbState, currentUser]);
 
   // ── Telegram low-stock auto-alerts ────────────────────────────────────────
@@ -294,13 +324,13 @@ export const AppProvider = ({ children }) => {
   };
 
   // ── Wrappers ──────────────────────────────────────────────────────────────
-  const sellCoupon = async (siteId, profileId, customerName, customerPhone, remarks) => {
+  const sellCoupon = async (siteId, profileId, customerName, customerPhone, remarks, isFree = false) => {
     if (!currentUser) return;
     try {
-      const result = await mockDb.sellCoupon(siteId, profileId, currentUser.id, customerName, customerPhone, remarks);
+      const result = await mockDb.sellCoupon(siteId, profileId, currentUser.id, customerName, customerPhone, remarks, isFree);
       // Refresh in background — UI uses optimistic pendingSale so user sees result immediately
       refreshDbState();
-      showToast('Coupon sold successfully!');
+      showToast(isFree ? 'Free coupon issued successfully!' : 'Coupon sold successfully!');
       return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
@@ -460,6 +490,22 @@ export const AppProvider = ({ children }) => {
     } catch (e) { showToast(`Error: ${e.message}`); }
   };
 
+  // expiryIso = ISO timestamp string, or null to clear (lifetime access)
+  const updateSiteSubscription = async (siteId, expiryIso) => {
+    if (!currentUser) return;
+    try {
+      await mockDb.updateSiteSubscription(siteId, expiryIso, currentUser.id);
+      await refreshDbState();
+      showToast(expiryIso ? 'Subscription updated' : 'Subscription expiry cleared');
+    } catch (e) { showToast(`Error: ${e.message}`); }
+  };
+
+  // A site with no expiry set never expires (legacy sites keep working).
+  const isSiteActive = (site) => {
+    if (!site || !site.subscriptionExpiry) return true;
+    return new Date(site.subscriptionExpiry).getTime() > Date.now();
+  };
+
   const resetDatabase = async () => {
     try {
       await mockDb.resetDb();
@@ -483,7 +529,7 @@ export const AppProvider = ({ children }) => {
       reverseTransaction, importCoupons, addSite, addCouponProfile, addUser,
       deleteUser, unlinkUserFromSite, linkUserToSite, deleteSite, deleteCoupon,
       deleteCouponProfile, bulkDeleteCoupons,
-      walletAdjustment, updateSettings, updateSiteSmsEnabled, resetDatabase
+      walletAdjustment, updateSettings, updateSiteSmsEnabled, updateSiteSubscription, isSiteActive, resetDatabase
     }}>
       {children}
     </AppContext.Provider>

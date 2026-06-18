@@ -17,6 +17,7 @@ export const Navbar = ({ activePage, onToggleSidebar, onToggleNotif }) => {
     selectedSiteId,
     setSelectedSiteId,
     getAccessibleSites,
+    isSiteActive,
     searchQuery,
     setSearchQuery,
     theme,
@@ -90,7 +91,7 @@ export const Navbar = ({ activePage, onToggleSidebar, onToggleNotif }) => {
               )}
               {accessibleSites.map(site => (
                 <option key={site.id} value={site.id}>
-                  {site.name}
+                  {site.name}{!isSiteActive(site) ? ' (Expired)' : ''}
                 </option>
               ))}
             </select>
