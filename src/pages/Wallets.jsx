@@ -17,7 +17,6 @@ export const Wallets = () => {
   const getFilteredWallets = () => {
     let list = db.wallets;
 
-<<<<<<< HEAD
     // Staff / Super Staff / Manager / Owner only see their own wallet(s)
     if (['Staff', 'Super Staff', 'Manager', 'Owner'].includes(currentUser.role)) {
       list = list.filter(w => w.ownerId === currentUser.id);
@@ -35,13 +34,6 @@ export const Wallets = () => {
       list = list.filter(w => visibleUserIds.has(w.ownerId));
     }
 
-=======
-    // Staff / Super Staff only see their own wallets
-    if (['Staff', 'Super Staff'].includes(currentUser.role)) {
-      list = list.filter(w => w.ownerId === currentUser.id);
-    }
-
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
     if (walletSearch) {
       const q = walletSearch.toLowerCase();
       list = list.filter(w => {

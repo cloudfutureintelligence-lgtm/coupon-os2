@@ -40,15 +40,10 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
 
   const { from, to } = getRange();
 
-<<<<<<< HEAD
   // Which sites this user can see.
   // ONLY Admin is global — every other role (including Accountant) is strictly
   // limited to their own assigned sites via db.userSites.
   const visibleSiteIds = role === 'Admin'
-=======
-  // Which sites this user can see
-  const visibleSiteIds = (role === 'Admin' || role === 'Accountant')
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
     ? db.sites.map(s => s.id)
     : db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
 

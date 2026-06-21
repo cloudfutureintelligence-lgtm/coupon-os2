@@ -2,11 +2,8 @@ import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Building2, Plus, MapPin, Users, CheckCircle2, UserPlus, Trash2, Layers, MessageSquare, CalendarClock, RotateCcw, Lock } from 'lucide-react';
 
-<<<<<<< HEAD
 const RESET_PASSWORD = '9495471187';
 
-=======
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
 // datetime-local inputs need "YYYY-MM-DDTHH:mm" in LOCAL time
 const toDatetimeLocalValue = (iso) => {
   if (!iso) return '';
@@ -20,12 +17,9 @@ export const Sites = () => {
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteLoc, setNewSiteLoc] = useState('');
   const [confirmDeleteSiteId, setConfirmDeleteSiteId] = useState(null);
-<<<<<<< HEAD
   const [deleteSitePassword, setDeleteSitePassword] = useState('');
   const [deleteSiteError, setDeleteSiteError] = useState('');
   const [deletingSite, setDeletingSite] = useState(false);
-=======
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
   const [linking, setLinking] = useState(false);
 
   // Per-site uncontrolled refs for the subscription expiry datetime input
@@ -46,7 +40,6 @@ export const Sites = () => {
     setNewSiteLoc('');
   };
 
-<<<<<<< HEAD
   const handleConfirmDeleteSite = async () => {
     if (deleteSitePassword !== RESET_PASSWORD) {
       setDeleteSiteError('Incorrect password. Please try again.');
@@ -64,8 +57,6 @@ export const Sites = () => {
     }
   };
 
-=======
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
   const handleAssignUser = async (e) => {
     e.preventDefault();
     if (!targetUserId || !targetSiteId) {
@@ -127,10 +118,7 @@ export const Sites = () => {
     // Group by role
     const grouped = {
       Owner: [],
-<<<<<<< HEAD
       'Super Owner': [],
-=======
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
       Manager: [],
       'Super Staff': [],
       Staff: [],
@@ -254,15 +242,11 @@ export const Sites = () => {
                   )}
                   {currentUser.role === 'Admin' && (
                     <button
-<<<<<<< HEAD
                       onClick={() => {
                         setConfirmDeleteSiteId(site.id);
                         setDeleteSitePassword('');
                         setDeleteSiteError('');
                       }}
-=======
-                      onClick={() => setConfirmDeleteSiteId(site.id)}
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
                       style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
                       title="Delete Site"
                     >
@@ -364,11 +348,7 @@ export const Sites = () => {
 
                 <div className="ui-section-divider" style={{ margin: '0.5rem 0' }} />
 
-<<<<<<< HEAD
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem', marginTop: '0.75rem' }}>
-=======
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.75rem' }}>
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
                   <div>
                     <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.25rem' }}>Owners</div>
                     {assignments.Owner.length > 0 ? (
@@ -389,7 +369,6 @@ export const Sites = () => {
                     ) : <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', fontStyle: 'italic' }}>None assigned</div>}
                   </div>
                   <div>
-<<<<<<< HEAD
                     <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.25rem' }}>Super Owners</div>
                     {assignments['Super Owner'].length > 0 ? (
                       assignments['Super Owner'].map((u) => (
@@ -409,8 +388,6 @@ export const Sites = () => {
                     ) : <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', fontStyle: 'italic' }}>None assigned</div>}
                   </div>
                   <div>
-=======
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
                     <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.25rem' }}>Site Managers</div>
                     {assignments.Manager.length > 0 ? (
                       assignments.Manager.map((u) => (
@@ -609,7 +586,6 @@ export const Sites = () => {
                 <p style={{ fontSize: '0.9rem', color: 'var(--text-2)' }}>
                   Are you sure you want to delete <strong style={{ color: 'var(--text)' }}>{site?.name}</strong>? This will remove the site and all associated data. This action cannot be undone.
                 </p>
-<<<<<<< HEAD
                 <div className="form-input-wrapper" style={{ marginTop: '1rem' }}>
                   <label className="form-field-label">Admin Password</label>
                   <input
@@ -635,17 +611,6 @@ export const Sites = () => {
                   disabled={deletingSite}
                 >
                   <Trash2 size={13} /> {deletingSite ? 'Deleting...' : 'Delete Site'}
-=======
-              </div>
-              <div className="app-modal-footer">
-                <button className="action-btn btn-outlined" onClick={() => setConfirmDeleteSiteId(null)}>Cancel</button>
-                <button
-                  className="action-btn"
-                  style={{ background: 'var(--red)', color: '#fff', border: 'none' }}
-                  onClick={async () => { await deleteSite(confirmDeleteSiteId); setConfirmDeleteSiteId(null); }}
-                >
-                  <Trash2 size={13} /> Delete Site
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
                 </button>
               </div>
             </div>

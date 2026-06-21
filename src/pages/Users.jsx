@@ -2,11 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Users as UsersIcon, Plus, ShieldCheck, Key, MapPin, Trash2 } from 'lucide-react';
 
-<<<<<<< HEAD
 const RESET_PASSWORD = '9495471187';
 
-=======
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
 export const Users = () => {
   const { db, addUser, deleteUser, showToast } = useApp();
 
@@ -16,14 +13,11 @@ export const Users = () => {
   const [password, setPassword] = useState('');
   const [selectedSites, setSelectedSites] = useState([]);
 
-<<<<<<< HEAD
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState(null);
   const [deleteUserPassword, setDeleteUserPassword] = useState('');
   const [deleteUserError, setDeleteUserError] = useState('');
   const [deletingUser, setDeletingUser] = useState(false);
 
-=======
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
   const handleSiteCheckbox = (siteId) => {
     if (selectedSites.includes(siteId)) {
       setSelectedSites(selectedSites.filter(id => id !== siteId));
@@ -61,7 +55,6 @@ export const Users = () => {
     showToast(`Password for user ${userId} reset to default: "ChangeMe2026!"`);
   };
 
-<<<<<<< HEAD
   const handleConfirmDeleteUser = async () => {
     if (deleteUserPassword !== RESET_PASSWORD) {
       setDeleteUserError('Incorrect password. Please try again.');
@@ -79,8 +72,6 @@ export const Users = () => {
     }
   };
 
-=======
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
   return (
     <div>
       {/* Page Header */}
@@ -134,10 +125,7 @@ export const Users = () => {
                   >
                     <option value="Admin">Admin</option>
                     <option value="Owner">Owner</option>
-<<<<<<< HEAD
                     <option value="Super Owner">Super Owner</option>
-=======
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
                     <option value="Manager">Manager</option>
                     <option value="Super Staff">Super Staff</option>
                     <option value="Staff">Staff</option>
@@ -215,11 +203,7 @@ export const Users = () => {
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>@{u.username}</div>
                         </td>
                         <td>
-<<<<<<< HEAD
                           <span className={`pill-badge badge-${u.role === 'Admin' ? 'danger' : (u.role === 'Accountant' ? 'purple' : (u.role === 'Super Owner' ? 'royal' : 'info'))}`}>
-=======
-                          <span className={`pill-badge badge-${u.role === 'Admin' ? 'danger' : (u.role === 'Accountant' ? 'purple' : 'info')}`}>
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
                             {u.role}
                           </span>
                         </td>
@@ -241,15 +225,9 @@ export const Users = () => {
                             <button 
                               className="action-btn btn-danger btn-sm"
                               onClick={() => {
-<<<<<<< HEAD
                                 setConfirmDeleteUserId(u.id);
                                 setDeleteUserPassword('');
                                 setDeleteUserError('');
-=======
-                                if (window.confirm(`Are you sure you want to delete user ${u.name}?`)) {
-                                  deleteUser(u.id);
-                                }
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
                               }}
                               title="Delete user account"
                               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.35rem' }}
@@ -268,7 +246,6 @@ export const Users = () => {
         </div>
 
       </div>
-<<<<<<< HEAD
 
       {/* Confirm Delete User Modal */}
       {confirmDeleteUserId && (() => {
@@ -315,8 +292,6 @@ export const Users = () => {
           </div>
         );
       })()}
-=======
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
     </div>
   );
 };

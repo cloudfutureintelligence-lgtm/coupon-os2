@@ -2,11 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Layers, Plus, Calendar, Trash2, Building2, MapPin } from 'lucide-react';
 
-<<<<<<< HEAD
 const RESET_PASSWORD = '9495471187';
 
-=======
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
 export const CouponProfiles = () => {
   const { db, addCouponProfile, deleteCouponProfile, showToast } = useApp();
 
@@ -17,12 +14,9 @@ export const CouponProfiles = () => {
   const [costPrice, setCostPrice] = useState('');
   const [description, setDescription] = useState('');
   const [confirmDeleteProfileId, setConfirmDeleteProfileId] = useState(null);
-<<<<<<< HEAD
   const [deleteProfilePassword, setDeleteProfilePassword] = useState('');
   const [deleteProfileError, setDeleteProfileError] = useState('');
   const [deletingProfile, setDeletingProfile] = useState(false);
-=======
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -41,7 +35,6 @@ export const CouponProfiles = () => {
     setName(''); setValidityDays(30); setPrice(''); setSalePrice(''); setCostPrice(''); setDescription('');
   };
 
-<<<<<<< HEAD
   const handleConfirmDeleteProfile = async () => {
     if (deleteProfilePassword !== RESET_PASSWORD) {
       setDeleteProfileError('Incorrect password. Please try again.');
@@ -59,8 +52,6 @@ export const CouponProfiles = () => {
     }
   };
 
-=======
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
   // Build profile card component
   const ProfileCard = ({ p, assignedSiteNames }) => (
     <div className="ui-card" style={{ marginBottom: 0 }}>
@@ -74,15 +65,11 @@ export const CouponProfiles = () => {
             {assignedSiteNames.length > 0 ? 'Active' : 'Unassigned'}
           </span>
           <button
-<<<<<<< HEAD
             onClick={() => {
               setConfirmDeleteProfileId(p.id);
               setDeleteProfilePassword('');
               setDeleteProfileError('');
             }}
-=======
-            onClick={() => setConfirmDeleteProfileId(p.id)}
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
             style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: '2px 4px', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
             title="Delete Profile"
           >
@@ -267,7 +254,6 @@ export const CouponProfiles = () => {
                 <p style={{ fontSize: '0.9rem', color: 'var(--text-2)' }}>
                   Are you sure you want to delete the profile <strong style={{ color: 'var(--text)' }}>{profile?.name}</strong>? Coupons linked to this profile will lose their profile reference. This action cannot be undone.
                 </p>
-<<<<<<< HEAD
                 <div className="form-input-wrapper" style={{ marginTop: '1rem' }}>
                   <label className="form-field-label">Admin Password</label>
                   <input
@@ -293,17 +279,6 @@ export const CouponProfiles = () => {
                   disabled={deletingProfile}
                 >
                   <Trash2 size={13} /> {deletingProfile ? 'Deleting...' : 'Delete Profile'}
-=======
-              </div>
-              <div className="app-modal-footer">
-                <button className="action-btn btn-outlined" onClick={() => setConfirmDeleteProfileId(null)}>Cancel</button>
-                <button
-                  className="action-btn"
-                  style={{ background: 'var(--red)', color: '#fff', border: 'none' }}
-                  onClick={async () => { await deleteCouponProfile(confirmDeleteProfileId); setConfirmDeleteProfileId(null); }}
-                >
-                  <Trash2 size={13} /> Delete Profile
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
                 </button>
               </div>
             </div>

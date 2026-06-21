@@ -276,11 +276,7 @@ export const Sales = () => {
             <Lock size={36} style={{ color: 'var(--red)', marginBottom: '0.5rem' }} />
             <div className="empty-view-title" style={{ color: 'var(--red)' }}>Subscription Expired</div>
             <div className="empty-view-description">
-<<<<<<< HEAD
               The subscription for {currentSite?.name || 'This site'} has expired. Coupon sales have been temporarily suspended. Service will resume automatically once the subscription is renewed.
-=======
-              {currentSite?.name || 'This site'}'s subscription has expired. Coupon sales are paused until an Admin renews it from the Sites page.
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
             </div>
           </div>
         </>
