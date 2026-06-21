@@ -30,7 +30,10 @@ const ROLE_ICONS = {
 const ROLE_COLORS = {
   Admin: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
   Owner: 'linear-gradient(135deg, #7C3AED, #6D28D9)',
+<<<<<<< HEAD
   'Super Owner': 'linear-gradient(135deg, #9333EA, #7E22CE)',
+=======
+>>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
   Manager: 'linear-gradient(135deg, #0891B2, #0e7490)',
   'Super Staff': 'linear-gradient(135deg, #D97706, #b45309)',
   Staff: 'linear-gradient(135deg, #16A34A, #15803d)',
@@ -71,6 +74,7 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
     }
 
     if (role === 'Owner') {
+<<<<<<< HEAD
       items.push({ id: 'salesanalytics', label: 'Sales Analytics', icon: BarChart3, group: 'Performance' });
       items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'Performance' });
       items.push({ id: 'collections', label: 'Collections Logs', icon: DollarSign, group: 'Performance' });
@@ -90,6 +94,19 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
       items.push({ id: 'collections', label: 'Cash Collections', icon: DollarSign, group: 'Monitoring' });
       items.push({ id: 'cashinhand', label: 'Cash In Hand', icon: Wallet, group: 'Monitoring' });
       items.push({ id: 'wallets', label: 'My Wallet', icon: Wallet, group: 'My Wallet' });
+=======
+      items.push({ id: 'sales', label: 'Sales Analytics', icon: Receipt, group: 'Performance' });
+      items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'Performance' });
+      items.push({ id: 'collections', label: 'Collections Logs', icon: DollarSign, group: 'Performance' });
+      items.push({ id: 'cashinhand', label: 'Cash In Hand', icon: Wallet, group: 'Performance' });
+    }
+
+    if (role === 'Manager') {
+      items.push({ id: 'sales', label: 'Sales Analytics', icon: Receipt, group: 'Monitoring' });
+      items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'Monitoring' });
+      items.push({ id: 'collections', label: 'Cash Collections', icon: DollarSign, group: 'Monitoring' });
+      items.push({ id: 'cashinhand', label: 'Cash In Hand', icon: Wallet, group: 'Monitoring' });
+>>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
     }
 
     if (role === 'Super Staff') {

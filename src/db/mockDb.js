@@ -107,6 +107,7 @@ export const updateSiteSubscription = async (siteId, expiryIso, currentUserId) =
 
 export const deleteSite = async (siteId, currentUserId) => {
   const { data: site } = await supabase.from('sites').select('name').eq('id', siteId).single();
+<<<<<<< HEAD
 
   // Delete all child records that reference this site (in dependency order)
   // 1. coupon_history rows for coupons belonging to this site
@@ -153,6 +154,10 @@ export const deleteSite = async (siteId, currentUserId) => {
   const { error } = await supabase.from('sites').delete().eq('id', siteId);
   if (error) throw new Error(error.message);
 
+=======
+  const { error } = await supabase.from('sites').delete().eq('id', siteId);
+  if (error) throw new Error(error.message);
+>>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
   await logAction(currentUserId, 'SITE_DELETION', 'Deleted site: ' + site?.name);
 };
 

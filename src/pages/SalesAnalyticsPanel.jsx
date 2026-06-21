@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { BarChart2, Calendar, Download, Printer, Filter } from 'lucide-react';
+import { BarChart2, Calendar, Download, Printer, Filter, Gift } from 'lucide-react';
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 const toDateStr = (d) => d.toISOString().slice(0, 10);
@@ -40,15 +40,8 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
 
   const { from, to } = getRange();
 
-<<<<<<< HEAD
-  // Which sites this user can see.
-  // ONLY Admin is global — every other role (including Accountant) is strictly
-  // limited to their own assigned sites via db.userSites.
-  const visibleSiteIds = role === 'Admin'
-=======
   // Which sites this user can see
   const visibleSiteIds = (role === 'Admin' || role === 'Accountant')
->>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
     ? db.sites.map(s => s.id)
     : db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
 
@@ -89,6 +82,11 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
 
   const allFiltered  = siteStats.flatMap(s => s.filtered);
 
+  // Free coupons issued (Manager-only feature) — track separately from paid sales
+  const freeCoupons       = allFiltered.filter(c => c.isFree);
+  const freeCouponsCount  = freeCoupons.length;
+  const paidCouponsCount  = totalCount - freeCouponsCount;
+
   const rangeLabel = dateMode === 'today' ? 'Today'
     : dateMode === 'month' ? 'This Month'
     : `${from} → ${to}`;
@@ -99,6 +97,7 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
     .sort((a, b) => b.revenue - a.revenue)
     .map(s => ({
       ...s,
+      freeCount: s.filtered.filter(c => c.isFree).length,
       sharePercent: totalRevenue > 0 ? ((s.revenue / totalRevenue) * 100).toFixed(1) : '0.0',
     }));
 
@@ -130,13 +129,13 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
     if (allFiltered.length === 0) { showToast('No data to export'); return; }
 
     const rows = [
-      ['Coupon Code', 'Profile', 'Site', 'Sold By', 'Sale Price (AED)', 'Cost (AED)', 'Profit (AED)', 'Sold At'],
+      ['Coupon Code', 'Profile', 'Site', 'Sold By', 'Sale Price (AED)', 'Cost (AED)', 'Profit (AED)', 'Free Coupon', 'Sold At'],
       ...allFiltered.map(c => {
         const prof = db.couponProfiles.find(p => p.id === c.profileId)?.name || c.profileId;
         const site = db.sites.find(s => s.id === c.siteId)?.name || c.siteId;
         const user = db.users.find(u => u.id === c.soldByUserId)?.name || c.soldByUserId;
         const profit = (c.salePrice || 0) - (c.cost || 0);
-        return [c.code, prof, site, user, c.salePrice, c.cost, profit, new Date(c.soldAt).toLocaleString()];
+        return [c.code, prof, site, user, c.salePrice, c.cost, profit, c.isFree ? 'Yes' : 'No', new Date(c.soldAt).toLocaleString()];
       }),
     ];
 
@@ -333,6 +332,13 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
             <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text)' }}>{activeSites} / {filteredSiteIds.length}</div>
             <div style={{ fontSize: '0.68rem', color: 'var(--text-3)' }}>had sales this period</div>
           </div>
+          <div style={{ ...summaryCardStyle, borderLeft: '3px solid var(--blue)' }}>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              <Gift size={11} /> Free Coupons
+            </div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--blue)' }}>{freeCouponsCount}</div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-3)' }}>of {totalCount} total ({paidCouponsCount} paid)</div>
+          </div>
         </div>
       </div>
 
@@ -372,6 +378,11 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
                       </td>
                       <td style={{ ...tableCellStyle, textAlign: 'right' }}>
                         <span className="pill-badge badge-info">{s.count}</span>
+                        {s.freeCount > 0 && (
+                          <span style={{ display: 'block', fontSize: '0.65rem', color: 'var(--blue)', marginTop: '0.2rem' }}>
+                            {s.freeCount} free
+                          </span>
+                        )}
                       </td>
                       <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 700, color: 'var(--green)' }}>
                         {s.revenue.toLocaleString()} AED

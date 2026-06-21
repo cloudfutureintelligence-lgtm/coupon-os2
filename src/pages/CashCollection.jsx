@@ -95,12 +95,18 @@ export const CashCollection = () => {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
+<<<<<<< HEAD
   // Get users of a given role that share at least one site with current user.
   // Rule: ONLY Admin sees all users globally.
   // Every other role — including Accountant, Owner, Manager, Super Staff —
   // is strictly limited to users assigned to at least one of their own sites.
   const getUsersByRole = (role) => {
     if (myRole === 'Admin') {
+=======
+  // Get users of a given role that share at least one site with current user
+  const getUsersByRole = (role) => {
+    if (myRole === 'Admin' || myRole === 'Accountant' || myRole === 'Owner') {
+>>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
       return db.users.filter(u => u.role === role);
     }
     const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);

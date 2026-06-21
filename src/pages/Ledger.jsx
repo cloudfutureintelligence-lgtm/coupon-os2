@@ -14,6 +14,7 @@ export const Ledger = () => {
 
   if (!currentUser) return null;
 
+<<<<<<< HEAD
   // Only Admin sees all transactions globally.
   // Every other role (including Accountant) sees only transactions where at least
   // one wallet involved belongs to a user assigned to one of their sites.
@@ -58,6 +59,10 @@ export const Ledger = () => {
     let list = isAdmin
       ? db.transactions
       : db.transactions.filter(txBelongsToMySites);
+=======
+  const getFilteredTransactions = () => {
+    let list = db.transactions;
+>>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
 
     if (typeFilter !== 'all') {
       list = list.filter(t => t.type === typeFilter);

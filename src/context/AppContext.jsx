@@ -338,7 +338,11 @@ export const AppProvider = ({ children }) => {
   const deleteUser = async (userId) => {
     if (!currentUser) return;
     try { await mockDb.deleteUser(userId, currentUser.id); await refreshDbState(); showToast('User deleted'); }
+<<<<<<< HEAD
     catch (e) { showToast(`Error: ${e.message}`); throw e; }
+=======
+    catch (e) { showToast(`Error: ${e.message}`); }
+>>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
   };
 
   const unlinkUserFromSite = async (userId, siteId) => {
@@ -442,13 +446,21 @@ export const AppProvider = ({ children }) => {
   const deleteSite = async (siteId) => {
     if (!currentUser) return;
     try { await mockDb.deleteSite(siteId, currentUser.id); await refreshDbState(); showToast('Site deleted'); }
+<<<<<<< HEAD
     catch (e) { showToast(`Error: ${e.message}`); throw e; }
+=======
+    catch (e) { showToast(`Error: ${e.message}`); }
+>>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
   };
 
   const deleteCouponProfile = async (profileId) => {
     if (!currentUser) return;
     try { await mockDb.deleteCouponProfile(profileId, currentUser.id); await refreshDbState(); showToast('Profile deleted'); }
+<<<<<<< HEAD
     catch (e) { showToast(`Error: ${e.message}`); throw e; }
+=======
+    catch (e) { showToast(`Error: ${e.message}`); }
+>>>>>>> f472e7621ca18dbe0379778985eb4b4cb453b3ba
   };
 
   const deleteCoupon = async (couponId) => {
