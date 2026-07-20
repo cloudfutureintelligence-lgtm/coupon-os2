@@ -30,6 +30,7 @@ const ROLE_ICONS = {
 const ROLE_COLORS = {
   Admin: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
   Owner: 'linear-gradient(135deg, #7C3AED, #6D28D9)',
+  'Super Owner': 'linear-gradient(135deg, #9333EA, #7E22CE)',
   Manager: 'linear-gradient(135deg, #0891B2, #0e7490)',
   'Super Staff': 'linear-gradient(135deg, #D97706, #b45309)',
   Staff: 'linear-gradient(135deg, #16A34A, #15803d)',
@@ -54,7 +55,7 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
       items.push({ id: 'sites', label: 'Sites', icon: Building2, group: 'Overview' });
       
       items.push({ id: 'profiles', label: 'Coupon Profiles', icon: Layers, group: 'Coupons' });
-      items.push({ id: 'coupons', label: 'Coupons Inventory', icon: Ticket, group: 'Coupons', badge: db.coupons.length });
+      items.push({ id: 'coupons', label: 'Coupons Inventory', icon: Ticket, group: 'Coupons' });
       items.push({ id: 'wallets', label: 'Wallets Overview', icon: Wallet, group: 'Financials' });
       items.push({ id: 'collections', label: 'Cash Collections', icon: DollarSign, group: 'Financials' });
       items.push({ id: 'ledger', icon: BookOpen, label: 'Ledger Audit', group: 'Financials' });
@@ -70,18 +71,25 @@ export const Sidebar = ({ activePage, setActivePage, isMobileOpen, setIsMobileOp
     }
 
     if (role === 'Owner') {
-      items.push({ id: 'sales', label: 'Sales Analytics', icon: Receipt, group: 'Performance' });
+      items.push({ id: 'salesanalytics', label: 'Sales Analytics', icon: BarChart3, group: 'Performance' });
       items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'Performance' });
       items.push({ id: 'collections', label: 'Collections Logs', icon: DollarSign, group: 'Performance' });
       items.push({ id: 'cashinhand', label: 'Cash In Hand', icon: Wallet, group: 'Performance' });
+      items.push({ id: 'wallets', label: 'My Wallet', icon: Wallet, group: 'My Wallet' });
+    }
+
+    if (role === 'Super Owner') {
+      items.push({ id: 'salesanalytics', label: 'Sales Analytics', icon: BarChart3, group: 'Performance' });
+      items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'Performance' });
     }
 
     if (role === 'Manager') {
       items.push({ id: 'sales', label: 'Sell Coupons', icon: Receipt, group: 'Monitoring' });
-      items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'Monitoring' });
       items.push({ id: 'salesanalytics', label: 'Sales Analytics', icon: BarChart3, group: 'Monitoring' });
+      items.push({ id: 'saleslog', label: 'Sales Log', icon: BookOpen, group: 'Monitoring' });
       items.push({ id: 'collections', label: 'Cash Collections', icon: DollarSign, group: 'Monitoring' });
       items.push({ id: 'cashinhand', label: 'Cash In Hand', icon: Wallet, group: 'Monitoring' });
+      items.push({ id: 'wallets', label: 'My Wallet', icon: Wallet, group: 'My Wallet' });
     }
 
     if (role === 'Super Staff') {
