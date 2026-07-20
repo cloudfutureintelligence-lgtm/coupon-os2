@@ -441,6 +441,7 @@ input, select, textarea {
 }
 
 .nav-badge-count {
+  display: none; /* no nav item currently uses a badge — hidden as a safety net */
   margin-left: auto;
   background: var(--blue);
   color: #FFFFFF;
