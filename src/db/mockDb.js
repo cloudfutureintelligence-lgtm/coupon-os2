@@ -39,23 +39,48 @@ const mapSettings = (r) => r ? ({
   msegatUserName: '', msegatApiKey: '', msegatSenderName: '',
 };
 
+/**
+ * Supabase/PostgREST caps any single query at 1000 rows by default. Tables
+ * that can realistically grow past that (coupons, and anything selected in
+ * full for duplicate/lookup checks) must be paged through in batches of
+ * 1000 until a short page tells us we've reached the end.
+ */
+const PAGE_SIZE = 1000;
+const fetchAllRows = async (build) => {
+  let all = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await build().range(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    all = all.concat(data || []);
+    if (!data || data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return all;
+};
+
 export const getDb = async () => {
   const [
-    { data: sites }, { data: profiles }, { data: users }, { data: userSites },
-    { data: sitePrices }, { data: coupons }, { data: wallets },
-    { data: transactions }, { data: auditLogs }, { data: settingsRows }, { data: cashCollections }
+    [{ data: sites }, { data: profiles }, { data: users }, { data: userSites },
+    { data: sitePrices }, { data: wallets },
+    { data: transactions }, { data: auditLogs }, { data: settingsRows }, { data: cashCollections }],
+    coupons
   ] = await Promise.all([
-    supabase.from('sites').select('*').order('name'),
-    supabase.from('coupon_profiles').select('*').order('name'),
-    supabase.from('users').select('*').order('name'),
-    supabase.from('user_sites').select('*'),
-    supabase.from('site_prices').select('*'),
-    supabase.from('coupons').select('*, coupon_history(*)').order('created_at', { ascending: false }),
-    supabase.from('wallets').select('*'),
-    supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500),
-    supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
-    supabase.from('settings').select('*').limit(1),
-    supabase.from('cash_collections').select('*').order('timestamp', { ascending: false })
+    Promise.all([
+      supabase.from('sites').select('*').order('name'),
+      supabase.from('coupon_profiles').select('*').order('name'),
+      supabase.from('users').select('*').order('name'),
+      supabase.from('user_sites').select('*'),
+      supabase.from('site_prices').select('*'),
+      supabase.from('wallets').select('*'),
+      supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500),
+      supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
+      supabase.from('settings').select('*').limit(1),
+      supabase.from('cash_collections').select('*').order('timestamp', { ascending: false })
+    ]),
+    // coupons can legitimately exceed Supabase's 1000-row-per-query default,
+    // so this one is paged through fully rather than fetched in one shot.
+    fetchAllRows(() => supabase.from('coupons').select('*, coupon_history(*)').order('created_at', { ascending: false }))
   ]);
   return {
     sites: (sites || []).map(mapSite),
@@ -107,52 +132,8 @@ export const updateSiteSubscription = async (siteId, expiryIso, currentUserId) =
 
 export const deleteSite = async (siteId, currentUserId) => {
   const { data: site } = await supabase.from('sites').select('name').eq('id', siteId).single();
-
-  // Delete all child records that reference this site (in dependency order)
-  // 1. coupon_history rows for coupons belonging to this site
-  const { data: siteCoupons } = await supabase.from('coupons').select('id').eq('site_id', siteId);
-  if (siteCoupons && siteCoupons.length > 0) {
-    const couponIds = siteCoupons.map(c => c.id);
-    const { error: chErr } = await supabase.from('coupon_history').delete().in('coupon_id', couponIds);
-    if (chErr) throw new Error(chErr.message);
-  }
-
-  // 2. coupons
-  const { error: couponsErr } = await supabase.from('coupons').delete().eq('site_id', siteId);
-  if (couponsErr) throw new Error(couponsErr.message);
-
-  // 3. wallets (and their transactions)
-  const { data: siteWallets } = await supabase.from('wallets').select('id').eq('site_id', siteId);
-  if (siteWallets && siteWallets.length > 0) {
-    const walletIds = siteWallets.map(w => w.id);
-    const { error: txErr1 } = await supabase.from('transactions').delete().in('from_wallet_id', walletIds);
-    if (txErr1) throw new Error(txErr1.message);
-    const { error: txErr2 } = await supabase.from('transactions').delete().in('to_wallet_id', walletIds);
-    if (txErr2) throw new Error(txErr2.message);
-  }
-  const { error: walletsErr } = await supabase.from('wallets').delete().eq('site_id', siteId);
-  if (walletsErr) throw new Error(walletsErr.message);
-
-  // 4. transactions that reference this site directly
-  const { error: txSiteErr } = await supabase.from('transactions').delete().eq('site_id', siteId);
-  if (txSiteErr) throw new Error(txSiteErr.message);
-
-  // 5. cash_collections
-  const { error: ccErr } = await supabase.from('cash_collections').delete().eq('site_id', siteId);
-  if (ccErr) throw new Error(ccErr.message);
-
-  // 6. site_prices
-  const { error: spErr } = await supabase.from('site_prices').delete().eq('site_id', siteId);
-  if (spErr) throw new Error(spErr.message);
-
-  // 7. user_sites
-  const { error: usErr } = await supabase.from('user_sites').delete().eq('site_id', siteId);
-  if (usErr) throw new Error(usErr.message);
-
-  // 8. Finally delete the site itself
   const { error } = await supabase.from('sites').delete().eq('id', siteId);
   if (error) throw new Error(error.message);
-
   await logAction(currentUserId, 'SITE_DELETION', 'Deleted site: ' + site?.name);
 };
 
@@ -239,8 +220,12 @@ export const importCoupons = async (csvLines, importedByUserId, siteId = null) =
   }
   const { data: profiles } = await supabase.from('coupon_profiles').select('*');
   const { data: sitePrices } = await supabase.from('site_prices').select('*');
-  const { data: existing } = await supabase.from('coupons').select('code');
-  const existingCodes = new Set((existing || []).map(c => c.code));
+  // Paged, not a single .select('code') — past 1000 existing coupons the
+  // unpaged version silently stopped seeing older codes, so duplicates
+  // could slip through (or valid new codes could be wrongly flagged once
+  // that page happened to include a look-alike from the truncated set).
+  const existing = await fetchAllRows(() => supabase.from('coupons').select('code'));
+  const existingCodes = new Set(existing.map(c => c.code));
   const { data: userRow } = await supabase.from('users').select('username').eq('id', importedByUserId).single();
   const username = userRow?.username || importedByUserId;
   const toInsert = [], historyToInsert = [], errors = [];
@@ -261,13 +246,33 @@ export const importCoupons = async (csvLines, importedByUserId, siteId = null) =
     toInsert.push({ id: couponId, code, profile_id: profile.id, site_id: siteId || null, cost, sale_price: salePrice, status: 'Available' });
     historyToInsert.push({ coupon_id: couponId, action: 'CREATED', details: 'Imported via CSV. Site: ' + (siteId || 'none'), user_id: username, timestamp });
   });
-  if (toInsert.length) {
-    const { error } = await supabase.from('coupons').insert(toInsert);
-    if (error) throw new Error(error.message);
-    await supabase.from('coupon_history').insert(historyToInsert);
+
+  // Insert in chunks rather than one giant request — keeps large pastes
+  // (hundreds/thousands of codes) well under Supabase's request size and
+  // statement-timeout limits, and lets us report exactly which chunk failed
+  // instead of silently losing rows.
+  const INSERT_CHUNK = 200;
+  let insertedCount = 0;
+  for (let i = 0; i < toInsert.length; i += INSERT_CHUNK) {
+    const couponChunk = toInsert.slice(i, i + INSERT_CHUNK);
+    const historyChunk = historyToInsert.slice(i, i + INSERT_CHUNK);
+
+    const { error: couponError } = await supabase.from('coupons').insert(couponChunk);
+    if (couponError) {
+      errors.push('Insert failed at row ' + (i + 1) + '-' + (i + couponChunk.length) + ': ' + couponError.message);
+      break; // stop rather than risk history rows pointing at coupons that never landed
+    }
+
+    const { error: historyError } = await supabase.from('coupon_history').insert(historyChunk);
+    if (historyError) {
+      errors.push('Coupons ' + (i + 1) + '-' + (i + couponChunk.length) + ' saved, but their history entry failed: ' + historyError.message);
+    }
+
+    insertedCount += couponChunk.length;
   }
-  await logAction(importedByUserId, 'CSV_IMPORT', 'Imported ' + toInsert.length + ' coupons. Errors: ' + errors.length);
-  return { success: true, count: toInsert.length, errors };
+
+  await logAction(importedByUserId, 'CSV_IMPORT', 'Imported ' + insertedCount + ' coupons. Errors: ' + errors.length);
+  return { success: true, count: insertedCount, errors };
 };
 
 export const deleteCoupon = async (couponId, currentUserId) => {
