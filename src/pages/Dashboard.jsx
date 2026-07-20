@@ -126,8 +126,10 @@ export const Dashboard = ({ setActivePage }) => {
             const avail    = profCoupons.filter(c => c.status === 'Available').length;
             const assigned = profCoupons.filter(c => c.status === 'Assigned').length;
             const sold     = profCoupons.filter(c => c.status === 'Sold').length;
-            const total    = profCoupons.length;
-            const availPct = total > 0 ? Math.round((avail / total) * 100) : 0;
+            // Fixed capacity denominator — always "out of 1000" regardless of
+            // actual current stock count, per requested display.
+            const total    = 1000;
+            const availPct = Math.round((avail / total) * 100);
             const isLow    = avail > 0 && avail < (db.settings?.lowStockThreshold || 5);
             const isEmpty  = avail === 0;
 
@@ -250,7 +252,6 @@ export const Dashboard = ({ setActivePage }) => {
         </div>
 
         <div className="metrics-grid">
-          <StatCard label="Total Coupons Stock" value={totalCouponsCount} sub="Coupons in platform" icon={Ticket} color="var(--blue)" bg="var(--blue-light)" trend="↑ 12%" />
           <StatCard label="Available Inventory" value={availableCount} sub={`${((availableCount/totalCouponsCount)*100 || 0).toFixed(1)}% of total`} icon={CheckCircle2} color="var(--green)" bg="var(--green-light)" />
           <StatCard label="Sold Coupons" value={soldCount} sub={`${((soldCount/totalCouponsCount)*100 || 0).toFixed(1)}% sell-out rate`} icon={TrendingUp} color="var(--purple)" bg="var(--purple-light)" />
           <StatCard label="Today's Revenue" value={`${todayRevenue} AED`} sub={`${todaySales.length} coupon sales today`} icon={DollarSign} color="var(--green)" bg="var(--green-light)" trend="↑ 24%" />
