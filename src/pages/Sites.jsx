@@ -2,11 +2,8 @@ import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Building2, Plus, MapPin, Users, CheckCircle2, UserPlus, Trash2, Layers, MessageSquare, CalendarClock, RotateCcw, Lock } from 'lucide-react';
 
-<<<<<<< HEAD
 const RESET_PASSWORD = '9495471187';
 
-=======
->>>>>>> a7f513d (test-new-c-add)
 // datetime-local inputs need "YYYY-MM-DDTHH:mm" in LOCAL time
 const toDatetimeLocalValue = (iso) => {
   if (!iso) return '';
