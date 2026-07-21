@@ -69,6 +69,14 @@ export const CashCollection = () => {
     if (db.sites) setSplits(db.sites.map(s => ({ siteId: s.id, amount: '' })));
   }, [db.sites]);
 
+  const visibleCollections = React.useMemo(() => {
+    if (!currentUser) return [];
+    const myRole = currentUser.role;
+    if (myRole === 'Admin') return db.cashCollections || [];
+    const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+    return (db.cashCollections || []).filter(cc => mySiteIds.includes(cc.site_id));
+  }, [db.cashCollections, db.userSites, currentUser]);
+
   if (!currentUser) return null;
 
   const myRole = currentUser.role;
@@ -110,12 +118,6 @@ export const CashCollection = () => {
       return userSites.some(sid => mySiteIds.includes(sid));
     });
   };
-
-  const visibleCollections = React.useMemo(() => {
-    if (myRole === 'Admin') return db.cashCollections || [];
-    const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
-    return (db.cashCollections || []).filter(cc => mySiteIds.includes(cc.site_id));
-  }, [db.cashCollections, db.userSites, currentUser.id, myRole]);
 
   const getWalletBalance = (userId, role) => {
     // Super Staff AND Manager can both accumulate two wallets: their own sales (-sales,
