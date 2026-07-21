@@ -191,14 +191,6 @@ export const Dashboard = ({ setActivePage }) => {
                     </div>
                     <div style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>Available</div>
                   </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--blue)' }}>{assigned}</div>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>Assigned</div>
-                  </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--purple)' }}>{sold}</div>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>Sold</div>
-                  </div>
                 </div>
               </div>
             );

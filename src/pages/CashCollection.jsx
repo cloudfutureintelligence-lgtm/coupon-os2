@@ -69,8 +69,10 @@ export const CashCollection = () => {
     if (db.sites) setSplits(db.sites.map(s => ({ siteId: s.id, amount: '' })));
   }, [db.sites]);
 
+  const myRole = currentUser?.role;
+
   const visibleCollections = React.useMemo(() => {
-    if (!currentUser || !targetUserId) return [];
+    if (!currentUser) return [];
     const myRole = currentUser.role;
     let baseList = db.cashCollections || [];
 
@@ -88,18 +90,19 @@ export const CashCollection = () => {
       });
     }
 
-    baseList = baseList.filter(cc => {
-      const fromId = cc.collected_from_user_id || cc.collectedFromUserId;
-      const byId = cc.collected_by_user_id || cc.collectedByUserId;
-      return fromId === targetUserId || byId === targetUserId;
-    });
+    if (targetUserId) {
+      baseList = baseList.filter(cc => {
+        const fromId = cc.collected_from_user_id || cc.collectedFromUserId;
+        const byId = cc.collected_by_user_id || cc.collectedByUserId;
+        return fromId === targetUserId || byId === targetUserId;
+      });
+    }
 
     return baseList;
-  }, [db.cashCollections, db.userSites, currentUser, targetUserId]);
+  }, [db.cashCollections, db.userSites, currentUser, myRole, targetUserId]);
 
   if (!currentUser) return null;
 
-  const myRole = currentUser.role;
   const collectableRoles = ROLE_CAN_COLLECT_FROM[myRole] || [];
 
   if (collectableRoles.length === 0) {
@@ -324,15 +327,14 @@ export const CashCollection = () => {
             <span className="ui-card-title">Recent Cash Collections</span>
           </div>
           <div className="ui-card-body" style={{ padding: 0 }}>
-            {!targetUserId ? (
-              <div className="empty-view-state" style={{ padding: '3rem 1rem' }}>
-                <div className="empty-view-title">Select a user</div>
-                <div className="empty-view-description">Choose a staff member from the dropdown to see their cash collection history</div>
-              </div>
-            ) : visibleCollections.length === 0 ? (
+            {(!visibleCollections || visibleCollections.length === 0) ? (
               <div className="empty-view-state" style={{ padding: '3rem 1rem' }}>
                 <div className="empty-view-title">No cash collections logged yet</div>
-                <div className="empty-view-description">No cash collections have been recorded for this user yet</div>
+                <div className="empty-view-description">
+                  {targetUserId 
+                    ? 'No cash collections have been recorded for this user yet'
+                    : 'No cash collections have been recorded for your sites yet'}
+                </div>
               </div>
             ) : (
               visibleCollections.slice(0, 10).map(cc => {
