@@ -301,34 +301,26 @@ export const sellCoupon = async (siteId, profileId, soldByUserId, customerName, 
   const coupon = coupons[0];
   const effectivePrice = isFree ? 0 : Number(coupon.sale_price);
 
-  // Step 2: Atomic status update + fetch both wallets in parallel
+  // Step 2: Atomic status update (guards against double-selling the same coupon)
   const walletId = 'w-' + soldByUserId + '-sales';
-  const [{ data: updated, error: updateError }, { data: ew }, { data: sw }] = await Promise.all([
-    supabase.from('coupons')
-      .update({ status: 'Sold', sold_by_user_id: soldByUserId, customer_name: customerName || '', customer_phone: customerPhone || '', sold_at: new Date().toISOString(), sale_price: effectivePrice, is_free: !!isFree })
-      .eq('id', coupon.id)
-      .eq('status', 'Available')
-      .select(),
-    supabase.from('wallets').select('id, balance').eq('id', walletId).single(),
-    supabase.from('wallets').select('balance').eq('id', 'w-system').single(),
-  ]);
+  const { data: updated, error: updateError } = await supabase.from('coupons')
+    .update({ status: 'Sold', sold_by_user_id: soldByUserId, customer_name: customerName || '', customer_phone: customerPhone || '', sold_at: new Date().toISOString(), sale_price: effectivePrice, is_free: !!isFree })
+    .eq('id', coupon.id)
+    .eq('status', 'Available')
+    .select();
   if (updateError) throw new Error(updateError.message);
   if (!updated || updated.length === 0) throw new Error('Coupon was already sold — please try again');
   const soldAt = updated[0].sold_at;
 
-  // Step 3: Update wallets + insert history/transaction/log all in parallel
-  // (Free coupons move 0 AED, so wallets are effectively untouched but we still
-  //  ensure the sales wallet row exists for first-time sellers like Managers.)
+  // Step 3: Wallet balances via adjust_wallet_balance RPC — a single atomic
+  // UPSERT in Postgres, not a read-then-write in app code. This is what
+  // actually prevents lost updates when multiple sales land on the same
+  // wallet at nearly the same moment (e.g. 5 staff selling concurrently).
   const txId = txid();
-  const newUserBalance = ew ? Number(ew.balance) + effectivePrice : effectivePrice;
   const freeNote = isFree ? 'FREE COUPON (Manager-issued, 0 AED). ' : '';
   await Promise.all([
-    ew
-      ? supabase.from('wallets').update({ balance: newUserBalance }).eq('id', walletId)
-      : supabase.from('wallets').insert({ id: walletId, owner_id: soldByUserId, owner_type: 'USER_SALES', balance: effectivePrice }),
-    sw
-      ? supabase.from('wallets').update({ balance: Number(sw.balance) - effectivePrice }).eq('id', 'w-system')
-      : Promise.resolve(),
+    supabase.rpc('adjust_wallet_balance', { p_wallet_id: walletId, p_delta: effectivePrice, p_owner_id: soldByUserId, p_owner_type: 'USER_SALES', p_allow_negative: true }),
+    supabase.rpc('adjust_wallet_balance', { p_wallet_id: 'w-system', p_delta: -effectivePrice, p_allow_negative: true }),
     supabase.from('coupon_history').insert({ coupon_id: coupon.id, action: isFree ? 'SOLD_FREE' : 'SOLD', user_id: soldByUserId, details: freeNote + 'Sold to ' + (customerName || 'Walk-in') + ' for ' + effectivePrice + ' AED. ' + (remarks || '') }),
     supabase.from('transactions').insert({ id: txId, from_wallet_id: 'w-system', to_wallet_id: walletId, amount: effectivePrice, type: 'SALE', timestamp: soldAt, remarks: freeNote + 'Coupon sold: ' + coupon.code, created_by_user_id: soldByUserId }),
     logAction(soldByUserId, 'COUPON_SALE', freeNote + 'Sold coupon ' + coupon.code + ' for ' + effectivePrice + ' AED. Customer: ' + (customerName || 'None')),
@@ -343,13 +335,16 @@ export const collectCashFromStaff = async (collectedByUserId, collectedFromUserI
   const ALLOWED_COLLECTORS = ['Super Staff', 'Manager', 'Owner', 'Accountant'];
   if (!collector || !ALLOWED_COLLECTORS.includes(collector.role)) throw new Error('Insufficient permissions to collect from Staff');
   const staffWalletId = 'w-' + collectedFromUserId + '-sales';
-  const { data: staffWallet } = await supabase.from('wallets').select('balance').eq('id', staffWalletId).single();
-  if (!staffWallet || Number(staffWallet.balance) < amount) throw new Error('Insufficient balance: ' + (staffWallet?.balance || 0) + ' AED');
   const superWalletId = 'w-' + collectedByUserId + '-collection';
-  const { data: superWallet } = await supabase.from('wallets').select('balance').eq('id', superWalletId).single();
-  await supabase.from('wallets').update({ balance: Number(staffWallet.balance) - amount }).eq('id', staffWalletId);
-  if (superWallet) { await supabase.from('wallets').update({ balance: Number(superWallet.balance) + amount }).eq('id', superWalletId); }
-  else { await supabase.from('wallets').insert({ id: superWalletId, owner_id: collectedByUserId, owner_type: 'USER_COLLECTION', balance: amount }); }
+
+  // Deducting with p_allow_negative:false makes the balance check and the
+  // deduction one atomic statement in Postgres — no gap where a second,
+  // concurrent collection could sneak past the same "is there enough?" check.
+  const { error: deductError } = await supabase.rpc('adjust_wallet_balance', { p_wallet_id: staffWalletId, p_delta: -amount, p_allow_negative: false });
+  if (deductError) throw new Error('Insufficient balance or wallet not found for staff member.');
+
+  await supabase.rpc('adjust_wallet_balance', { p_wallet_id: superWalletId, p_delta: amount, p_owner_id: collectedByUserId, p_owner_type: 'USER_COLLECTION', p_allow_negative: true });
+
   const txId = txid();
   await supabase.from('transactions').insert({ id: txId, from_wallet_id: staffWalletId, to_wallet_id: superWalletId, amount, type: 'CASH_COLLECTION', created_by_user_id: collectedByUserId, remarks: remarks || 'Collected ' + amount + ' AED from staff' });
   await supabase.from('cash_collections').insert({ id: uid(), collected_from_user_id: collectedFromUserId, collected_by_user_id: collectedByUserId, amount, site_id: siteId || null, remarks: remarks || '' });
