@@ -70,12 +70,32 @@ export const CashCollection = () => {
   }, [db.sites]);
 
   const visibleCollections = React.useMemo(() => {
-    if (!currentUser) return [];
+    if (!currentUser || !targetUserId) return [];
     const myRole = currentUser.role;
-    if (myRole === 'Admin') return db.cashCollections || [];
-    const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
-    return (db.cashCollections || []).filter(cc => mySiteIds.includes(cc.site_id));
-  }, [db.cashCollections, db.userSites, currentUser]);
+    let baseList = db.cashCollections || [];
+
+    if (myRole !== 'Admin') {
+      const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+      const mySiteUserIds = new Set(
+        db.userSites.filter(us => mySiteIds.includes(us.siteId)).map(us => us.userId)
+      );
+      mySiteUserIds.add(currentUser.id);
+
+      baseList = baseList.filter(cc => {
+        const fromId = cc.collected_from_user_id || cc.collectedFromUserId;
+        const byId = cc.collected_by_user_id || cc.collectedByUserId;
+        return mySiteUserIds.has(fromId) || mySiteUserIds.has(byId) || mySiteIds.includes(cc.site_id);
+      });
+    }
+
+    baseList = baseList.filter(cc => {
+      const fromId = cc.collected_from_user_id || cc.collectedFromUserId;
+      const byId = cc.collected_by_user_id || cc.collectedByUserId;
+      return fromId === targetUserId || byId === targetUserId;
+    });
+
+    return baseList;
+  }, [db.cashCollections, db.userSites, currentUser, myRole, targetUserId]);
 
   if (!currentUser) return null;
 
@@ -304,9 +324,15 @@ export const CashCollection = () => {
             <span className="ui-card-title">Recent Cash Collections</span>
           </div>
           <div className="ui-card-body" style={{ padding: 0 }}>
-            {(!visibleCollections || visibleCollections.length === 0) ? (
-              <div className="empty-view-state">
+            {!targetUserId ? (
+              <div className="empty-view-state" style={{ padding: '3rem 1rem' }}>
+                <div className="empty-view-title">Select a user</div>
+                <div className="empty-view-description">Choose a staff member from the dropdown to see their cash collection history</div>
+              </div>
+            ) : visibleCollections.length === 0 ? (
+              <div className="empty-view-state" style={{ padding: '3rem 1rem' }}>
                 <div className="empty-view-title">No cash collections logged yet</div>
+                <div className="empty-view-description">No cash collections have been recorded for this user yet</div>
               </div>
             ) : (
               visibleCollections.slice(0, 10).map(cc => {
