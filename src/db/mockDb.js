@@ -59,12 +59,42 @@ const fetchAllRows = async (build) => {
   return all;
 };
 
+export const getCouponHistory = async (couponId) => {
+  const { data, error } = await supabase
+    .from('coupon_history')
+    .select('*')
+    .eq('coupon_id', couponId)
+    .order('timestamp', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data || []).map(h => ({
+    action: h.action,
+    details: h.details,
+    user: h.user_id,
+    timestamp: h.timestamp
+  }));
+};
+
+export const searchCouponsOnDemand = async (query) => {
+  if (!query || !query.trim()) return [];
+  const q = `%${query.trim()}%`;
+  const { data, error } = await supabase
+    .from('coupons')
+    .select('*')
+    .or(`code.ilike.${q},customer_name.ilike.${q},customer_phone.ilike.${q},sold_by_user_id.ilike.${q}`);
+  if (error) throw new Error(error.message);
+  return (data || []).map(mapCoupon);
+};
+
 export const getDb = async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const MAX_PAGES = 10;
+
   const [
     [{ data: sites }, { data: profiles }, { data: users }, { data: userSites },
     { data: sitePrices }, { data: wallets },
     { data: transactions }, { data: auditLogs }, { data: settingsRows }, { data: cashCollections }],
-    coupons
+    todaySoldRes,
+    ...availResults
   ] = await Promise.all([
     Promise.all([
       supabase.from('sites').select('*').order('name'),
@@ -78,17 +108,40 @@ export const getDb = async () => {
       supabase.from('settings').select('*').limit(1),
       supabase.from('cash_collections').select('*').order('timestamp', { ascending: false })
     ]),
-    // coupons can legitimately exceed Supabase's 1000-row-per-query default,
-    // so this one is paged through fully rather than fetched in one shot.
-    fetchAllRows(() => supabase.from('coupons').select('*, coupon_history(*)').order('created_at', { ascending: false }))
+    supabase.from('coupons').select('*').eq('status', 'Sold').gte('sold_at', today),
+    ...Array.from({ length: MAX_PAGES }, (_, i) =>
+      supabase.from('coupons').select('site_id, profile_id').eq('status', 'Available').range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
+    )
   ]);
+
+  if (todaySoldRes.error) throw new Error(todaySoldRes.error.message);
+  const todaySoldCoupons = todaySoldRes.data || [];
+
+  let availableCouponsRaw = [];
+  for (const res of availResults) {
+    if (res.error) throw new Error(res.error.message);
+    availableCouponsRaw = availableCouponsRaw.concat(res.data || []);
+  }
+
+  const availableCoupons = availableCouponsRaw.map((c, index) => ({
+    id: `avail-dummy-${index}`,
+    code: `AVAIL-DUMMY-${index}`,
+    profileId: c.profile_id,
+    siteId: c.site_id,
+    status: 'Available',
+    history: []
+  }));
+
+  const soldCoupons = todaySoldCoupons.map(mapCoupon);
+  const coupons = [...availableCoupons, ...soldCoupons];
+
   return {
     sites: (sites || []).map(mapSite),
     couponProfiles: (profiles || []).map(mapProfile),
     users: (users || []).map(mapUser),
     userSites: (userSites || []).map(mapUserSite),
     sitePrices: (sitePrices || []).map(mapSitePrice),
-    coupons: (coupons || []).map(mapCoupon),
+    coupons,
     wallets: (wallets || []).map(mapWallet),
     transactions: (transactions || []).map(mapTransaction),
     auditLogs: (auditLogs || []).map(mapAuditLog),

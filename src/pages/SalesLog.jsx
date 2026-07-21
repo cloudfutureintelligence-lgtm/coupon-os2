@@ -18,15 +18,37 @@ const PAGE_SIZE = 50;
 const todayStr  = () => new Date().toISOString().slice(0, 10);
 
 export const SalesLog = () => {
-  const { db, currentUser } = useApp();
+  const { db, currentUser, searchCouponsOnDemand } = useApp();
 
   const [search,        setSearch]        = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching,   setIsSearching]   = useState(false);
   const [filterSiteId,  setFilterSiteId]  = useState('all');
   const [filterProfile, setFilterProfile] = useState('all');
   const [filterSeller,  setFilterSeller]  = useState('all');
   const [dateFrom,      setDateFrom]      = useState('');
   const [dateTo,        setDateTo]        = useState('');
   const [currentPage,   setCurrentPage]   = useState(1);
+
+  // Debounced historical coupon search
+  useEffect(() => {
+    if (!search.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const delay = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = await searchCouponsOnDemand(search);
+        setSearchResults(results);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+    return () => clearTimeout(delay);
+  }, [search, searchCouponsOnDemand]);
 
   if (!currentUser) return null;
   const role = currentUser.role;
@@ -48,9 +70,10 @@ export const SalesLog = () => {
 
   // ── Base sales list: all roles see all sales at their site(s) ─────────────
   const baseSales = useMemo(() => {
-    return db.coupons
+    const sourceList = search.trim() ? searchResults : db.coupons;
+    return sourceList
       .filter(c => c.status === 'Sold' && visibleSiteIds.includes(c.siteId));
-  }, [db, visibleSiteIds]);
+  }, [db.coupons, search, searchResults, visibleSiteIds]);
 
   // ── Apply filters ─────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -351,7 +374,14 @@ export const SalesLog = () => {
               </tr>
             </thead>
             <tbody>
-              {pageRows.length === 0 ? (
+              {isSearching ? (
+                <tr>
+                  <td colSpan={8 + (dropdownSites.length > 1 ? 1 : 0)} className="empty-view-state" style={{ padding: '3rem 1rem' }}>
+                    <div className="empty-view-title">Searching database...</div>
+                    <div className="empty-view-description">Please wait while we look up historical records.</div>
+                  </td>
+                </tr>
+              ) : pageRows.length === 0 ? (
                 <tr>
                   <td colSpan={8 + (dropdownSites.length > 1 ? 1 : 0)} className="empty-view-state" style={{ padding: '3rem 1rem' }}>
                     <div className="empty-view-title">

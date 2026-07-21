@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Ticket, 
@@ -30,11 +30,15 @@ export const Coupons = () => {
     deleteCoupon,
     bulkDeleteCoupons,
     isSiteActive,
-    showToast 
+    showToast,
+    getCouponHistory,
+    searchCouponsOnDemand
   } = useApp();
 
   // Search & Filter state
   const [localSearch, setLocalSearch] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [profileFilter, setProfileFilter] = useState('all');
 
@@ -66,7 +70,43 @@ export const Coupons = () => {
 
   // Selected coupon for history details
   const [selectedCoupon, setSelectedCoupon] = useState(null);
+  const [historyLogs, setHistoryLogs] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Debounced historical coupon search
+  useEffect(() => {
+    if (!localSearch.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const delay = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = await searchCouponsOnDemand(localSearch);
+        setSearchResults(results);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+    return () => clearTimeout(delay);
+  }, [localSearch, searchCouponsOnDemand]);
+
+  const handleViewHistory = async (coupon) => {
+    setSelectedCoupon(coupon);
+    setLoadingHistory(true);
+    setHistoryLogs([]);
+    try {
+      const logs = await getCouponHistory(coupon.id);
+      setHistoryLogs(logs);
+    } catch (e) {
+      showToast('Error loading coupon history');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   if (!currentUser) return null;
 
@@ -130,7 +170,7 @@ export const Coupons = () => {
 
   // Get accessible coupons (Admin only view)
   const getFilteredCoupons = () => {
-    let list = db.coupons;
+    let list = localSearch.trim() ? searchResults : db.coupons;
 
     // Filter by navbar site selector
     if (selectedSiteId !== 'all') {
@@ -158,7 +198,7 @@ export const Coupons = () => {
     const list = getFilteredCoupons();
     list.sort((a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9));
     return list;
-  }, [db.coupons, selectedSiteId, localSearch, statusFilter, profileFilter]);
+  }, [db.coupons, searchResults, selectedSiteId, localSearch, statusFilter, profileFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredCoupons.length / PAGE_SIZE));
   const pageStart  = (currentPage - 1) * PAGE_SIZE;
@@ -310,7 +350,14 @@ export const Coupons = () => {
             </tr>
           </thead>
           <tbody>
-            {pageRows.length === 0 ? (
+            {isSearching ? (
+              <tr>
+                <td colSpan="8" className="empty-view-state" style={{ padding: '3rem 1rem' }}>
+                  <div className="empty-view-title">Searching database...</div>
+                  <div className="empty-view-description">Please wait while we fetch matching records.</div>
+                </td>
+              </tr>
+            ) : pageRows.length === 0 ? (
               <tr>
                 <td colSpan="8" className="empty-view-state" style={{ padding: '3rem 1rem' }}>
                   <div className="empty-view-title">No coupons found</div>
@@ -359,7 +406,7 @@ export const Coupons = () => {
                     <td className="td-actions">
                       <button 
                         className="action-icon-btn action-btn-sm" 
-                        onClick={() => setSelectedCoupon(coupon)}
+                        onClick={() => handleViewHistory(coupon)}
                         title="View Audit Trail"
                       >
                         <History size={12} />
@@ -703,49 +750,59 @@ export const Coupons = () => {
                 <span className="app-modal-title" style={{ display: 'block' }}>Coupon History Trace</span>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Code: {selectedCoupon.code}</span>
               </div>
-              <button className="app-modal-close-btn" onClick={() => setSelectedCoupon(null)}>×</button>
+              <button className="app-modal-close-btn" onClick={() => { setSelectedCoupon(null); setHistoryLogs([]); }}>×</button>
             </div>
             <div className="app-modal-body" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-              <div className="flex-direction-gap" style={{ gap: '1rem' }}>
-                {selectedCoupon.history.map((log, index) => (
-                  <div 
-                    key={index} 
-                    style={{ 
-                      display: 'flex', 
-                      gap: '0.75rem', 
-                      position: 'relative',
-                      paddingLeft: '1.25rem',
-                      borderLeft: '2px solid var(--border)' 
-                    }}
-                  >
+              {loadingHistory ? (
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-3)' }}>
+                  Loading history logs...
+                </div>
+              ) : historyLogs.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-3)' }}>
+                  No history logs found for this coupon.
+                </div>
+              ) : (
+                <div className="flex-direction-gap" style={{ gap: '1rem' }}>
+                  {historyLogs.map((log, index) => (
                     <div 
+                      key={index} 
                       style={{ 
-                        position: 'absolute', 
-                        left: '-6px', 
-                        top: '4px', 
-                        width: '10px', 
-                        height: '10px', 
-                        borderRadius: '50%', 
-                        background: 'var(--blue)' 
-                      }} 
-                    />
-                    <div>
-                      <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text)' }}>
-                        {log.action}
-                      </div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-2)', margin: '0.15rem 0' }}>
-                        {log.details}
-                      </div>
-                      <div style={{ fontSize: '0.68rem', color: 'var(--text-3)' }}>
-                        By: {log.user} • {new Date(log.timestamp).toLocaleString()}
+                        display: 'flex', 
+                        gap: '0.75rem', 
+                        position: 'relative',
+                        paddingLeft: '1.25rem',
+                        borderLeft: '2px solid var(--border)' 
+                      }}
+                    >
+                      <div 
+                        style={{ 
+                          position: 'absolute', 
+                          left: '-6px', 
+                          top: '4px', 
+                          width: '10px', 
+                          height: '10px', 
+                          borderRadius: '50%', 
+                          background: 'var(--blue)' 
+                        }} 
+                      />
+                      <div>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text)' }}>
+                          {log.action}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-2)', margin: '0.15rem 0' }}>
+                          {log.details}
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-3)' }}>
+                          By: {log.user} • {new Date(log.timestamp).toLocaleString()}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="app-modal-footer">
-              <button className="action-btn btn-outlined" onClick={() => setSelectedCoupon(null)}>Close</button>
+              <button className="action-btn btn-outlined" onClick={() => { setSelectedCoupon(null); setHistoryLogs([]); }}>Close</button>
             </div>
           </div>
         </div>

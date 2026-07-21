@@ -516,6 +516,14 @@ export const AppProvider = ({ children }) => {
     } catch (e) { showToast(`Error resetting database: ${e.message}`); throw e; }
   };
 
+  const getCouponHistory = async (couponId) => {
+    return await mockDb.getCouponHistory(couponId);
+  };
+
+  const searchCouponsOnDemand = async (query) => {
+    return await mockDb.searchCouponsOnDemand(query);
+  };
+
   return (
     <AppContext.Provider value={{
       db: dbState, currentUser, appLoading: loading, refreshDbState, loginUser, logoutUser,
@@ -528,7 +536,7 @@ export const AppProvider = ({ children }) => {
       collectCashFromManager, collectCashFromOwner,
       reverseTransaction, importCoupons, addSite, addCouponProfile, addUser,
       deleteUser, unlinkUserFromSite, linkUserToSite, deleteSite, deleteCoupon,
-      deleteCouponProfile, bulkDeleteCoupons,
+      deleteCouponProfile, bulkDeleteCoupons, getCouponHistory, searchCouponsOnDemand,
       walletAdjustment, updateSettings, updateSiteSmsEnabled, updateSiteSubscription, isSiteActive, resetDatabase
     }}>
       {children}
