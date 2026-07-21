@@ -520,10 +520,6 @@ export const AppProvider = ({ children }) => {
     return await mockDb.getCouponHistory(couponId);
   };
 
-  const searchCouponsOnDemand = async (query) => {
-    return await mockDb.searchCouponsOnDemand(query);
-  };
-
   return (
     <AppContext.Provider value={{
       db: dbState, currentUser, appLoading: loading, refreshDbState, loginUser, logoutUser,
@@ -536,7 +532,7 @@ export const AppProvider = ({ children }) => {
       collectCashFromManager, collectCashFromOwner,
       reverseTransaction, importCoupons, addSite, addCouponProfile, addUser,
       deleteUser, unlinkUserFromSite, linkUserToSite, deleteSite, deleteCoupon,
-      deleteCouponProfile, bulkDeleteCoupons, getCouponHistory, searchCouponsOnDemand,
+      deleteCouponProfile, bulkDeleteCoupons, getCouponHistory,
       walletAdjustment, updateSettings, updateSiteSmsEnabled, updateSiteSubscription, isSiteActive, resetDatabase
     }}>
       {children}

@@ -31,14 +31,11 @@ export const Coupons = () => {
     bulkDeleteCoupons,
     isSiteActive,
     showToast,
-    getCouponHistory,
-    searchCouponsOnDemand
+    getCouponHistory
   } = useApp();
 
   // Search & Filter state
   const [localSearch, setLocalSearch] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [profileFilter, setProfileFilter] = useState('all');
 
@@ -73,26 +70,6 @@ export const Coupons = () => {
   const [historyLogs, setHistoryLogs] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-
-  // Debounced historical coupon search
-  useEffect(() => {
-    if (!localSearch.trim()) {
-      setSearchResults([]);
-      return;
-    }
-    const delay = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const results = await searchCouponsOnDemand(localSearch);
-        setSearchResults(results);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 400);
-    return () => clearTimeout(delay);
-  }, [localSearch, searchCouponsOnDemand]);
 
   const handleViewHistory = async (coupon) => {
     setSelectedCoupon(coupon);
@@ -170,7 +147,7 @@ export const Coupons = () => {
 
   // Get accessible coupons (Admin only view)
   const getFilteredCoupons = () => {
-    let list = localSearch.trim() ? searchResults : db.coupons;
+    let list = db.coupons;
 
     // Filter by navbar site selector
     if (selectedSiteId !== 'all') {
@@ -198,7 +175,7 @@ export const Coupons = () => {
     const list = getFilteredCoupons();
     list.sort((a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9));
     return list;
-  }, [db.coupons, searchResults, selectedSiteId, localSearch, statusFilter, profileFilter]);
+  }, [db.coupons, selectedSiteId, localSearch, statusFilter, profileFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredCoupons.length / PAGE_SIZE));
   const pageStart  = (currentPage - 1) * PAGE_SIZE;
@@ -350,14 +327,7 @@ export const Coupons = () => {
             </tr>
           </thead>
           <tbody>
-            {isSearching ? (
-              <tr>
-                <td colSpan="8" className="empty-view-state" style={{ padding: '3rem 1rem' }}>
-                  <div className="empty-view-title">Searching database...</div>
-                  <div className="empty-view-description">Please wait while we fetch matching records.</div>
-                </td>
-              </tr>
-            ) : pageRows.length === 0 ? (
+            {pageRows.length === 0 ? (
               <tr>
                 <td colSpan="8" className="empty-view-state" style={{ padding: '3rem 1rem' }}>
                   <div className="empty-view-title">No coupons found</div>

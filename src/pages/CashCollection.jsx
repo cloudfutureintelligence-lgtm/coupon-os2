@@ -111,6 +111,12 @@ export const CashCollection = () => {
     });
   };
 
+  const visibleCollections = React.useMemo(() => {
+    if (myRole === 'Admin') return db.cashCollections || [];
+    const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+    return (db.cashCollections || []).filter(cc => mySiteIds.includes(cc.site_id));
+  }, [db.cashCollections, db.userSites, currentUser.id, myRole]);
+
   const getWalletBalance = (userId, role) => {
     // Super Staff AND Manager can both accumulate two wallets: their own sales (-sales,
     // from selling coupons directly) + cash collected from others (-collection).
@@ -296,12 +302,12 @@ export const CashCollection = () => {
             <span className="ui-card-title">Recent Cash Collections</span>
           </div>
           <div className="ui-card-body" style={{ padding: 0 }}>
-            {(!db.cashCollections || db.cashCollections.length === 0) ? (
+            {(!visibleCollections || visibleCollections.length === 0) ? (
               <div className="empty-view-state">
                 <div className="empty-view-title">No cash collections logged yet</div>
               </div>
             ) : (
-              db.cashCollections.slice(0, 10).map(cc => {
+              visibleCollections.slice(0, 10).map(cc => {
                 const fromUser = db.users.find(u => u.id === cc.collected_from_user_id || u.id === cc.collectedFromUserId);
                 const byUser = db.users.find(u => u.id === cc.collected_by_user_id || u.id === cc.collectedByUserId);
                 const ts = cc.timestamp || cc.created_at;

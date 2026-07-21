@@ -18,37 +18,15 @@ const PAGE_SIZE = 50;
 const todayStr  = () => new Date().toISOString().slice(0, 10);
 
 export const SalesLog = () => {
-  const { db, currentUser, searchCouponsOnDemand } = useApp();
+  const { db, currentUser } = useApp();
 
   const [search,        setSearch]        = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [isSearching,   setIsSearching]   = useState(false);
   const [filterSiteId,  setFilterSiteId]  = useState('all');
   const [filterProfile, setFilterProfile] = useState('all');
   const [filterSeller,  setFilterSeller]  = useState('all');
-  const [dateFrom,      setDateFrom]      = useState('');
+  const [dateFrom,      setDateFrom]      = useState(todayStr());
   const [dateTo,        setDateTo]        = useState('');
   const [currentPage,   setCurrentPage]   = useState(1);
-
-  // Debounced historical coupon search
-  useEffect(() => {
-    if (!search.trim()) {
-      setSearchResults([]);
-      return;
-    }
-    const delay = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const results = await searchCouponsOnDemand(search);
-        setSearchResults(results);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 400);
-    return () => clearTimeout(delay);
-  }, [search, searchCouponsOnDemand]);
 
   if (!currentUser) return null;
   const role = currentUser.role;
@@ -70,10 +48,9 @@ export const SalesLog = () => {
 
   // ── Base sales list: all roles see all sales at their site(s) ─────────────
   const baseSales = useMemo(() => {
-    const sourceList = search.trim() ? searchResults : db.coupons;
-    return sourceList
+    return db.coupons
       .filter(c => c.status === 'Sold' && visibleSiteIds.includes(c.siteId));
-  }, [db.coupons, search, searchResults, visibleSiteIds]);
+  }, [db.coupons, visibleSiteIds]);
 
   // ── Apply filters ─────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -82,8 +59,12 @@ export const SalesLog = () => {
     if (filterSiteId  !== 'all') list = list.filter(c => c.siteId      === filterSiteId);
     if (filterProfile !== 'all') list = list.filter(c => c.profileId   === filterProfile);
     if (filterSeller  !== 'all') list = list.filter(c => c.soldByUserId === filterSeller);
-    if (dateFrom) list = list.filter(c => c.soldAt && c.soldAt.slice(0, 10) >= dateFrom);
-    if (dateTo)   list = list.filter(c => c.soldAt && c.soldAt.slice(0, 10) <= dateTo);
+    
+    // Only apply date filters if search input is empty
+    if (!search.trim()) {
+      if (dateFrom) list = list.filter(c => c.soldAt && c.soldAt.slice(0, 10) >= dateFrom);
+      if (dateTo)   list = list.filter(c => c.soldAt && c.soldAt.slice(0, 10) <= dateTo);
+    }
 
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -374,14 +355,7 @@ export const SalesLog = () => {
               </tr>
             </thead>
             <tbody>
-              {isSearching ? (
-                <tr>
-                  <td colSpan={8 + (dropdownSites.length > 1 ? 1 : 0)} className="empty-view-state" style={{ padding: '3rem 1rem' }}>
-                    <div className="empty-view-title">Searching database...</div>
-                    <div className="empty-view-description">Please wait while we look up historical records.</div>
-                  </td>
-                </tr>
-              ) : pageRows.length === 0 ? (
+              {pageRows.length === 0 ? (
                 <tr>
                   <td colSpan={8 + (dropdownSites.length > 1 ? 1 : 0)} className="empty-view-state" style={{ padding: '3rem 1rem' }}>
                     <div className="empty-view-title">
