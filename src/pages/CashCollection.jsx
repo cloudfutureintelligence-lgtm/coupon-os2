@@ -95,7 +95,7 @@ export const CashCollection = () => {
     });
 
     return baseList;
-  }, [db.cashCollections, db.userSites, currentUser, myRole, targetUserId]);
+  }, [db.cashCollections, db.userSites, currentUser, targetUserId]);
 
   if (!currentUser) return null;
 
