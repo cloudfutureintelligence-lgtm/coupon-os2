@@ -310,121 +310,70 @@ export const deleteCoupon = async (couponId, currentUserId) => {
 };
 
 export const sellCoupon = async (siteId, profileId, soldByUserId, customerName, customerPhone, remarks, isFree = false) => {
-  // Step 0: Subscription gate — a site whose subscription has lapsed cannot sell coupons
-  const { data: site } = await supabase.from('sites').select('name, subscription_expiry').eq('id', siteId).single();
-  if (!isSiteSubscriptionActive(site)) {
-    throw new Error('This site\'s subscription has expired. Ask an Admin to renew it before selling coupons.');
-  }
-
-  // Step 0b: Only Managers may issue free coupons — enforce server-side too
-  if (isFree) {
-    const { data: seller } = await supabase.from('users').select('role').eq('id', soldByUserId).single();
-    if (!seller || seller.role !== 'Manager') throw new Error('Only Managers can issue free coupons');
-  }
-
-  // Step 1: Find an available coupon
-  const { data: coupons } = await supabase.from('coupons').select('*').eq('site_id', siteId).eq('profile_id', profileId).eq('status', 'Available').limit(1);
-  if (!coupons || coupons.length === 0) throw new Error('No coupons available for this profile at this site');
-  const coupon = coupons[0];
-  const effectivePrice = isFree ? 0 : Number(coupon.sale_price);
-
-  // Step 2: Atomic status update (guards against double-selling the same coupon)
-  const walletId = 'w-' + soldByUserId + '-sales';
-  const { data: updated, error: updateError } = await supabase.from('coupons')
-    .update({ status: 'Sold', sold_by_user_id: soldByUserId, customer_name: customerName || '', customer_phone: customerPhone || '', sold_at: new Date().toISOString(), sale_price: effectivePrice, is_free: !!isFree })
-    .eq('id', coupon.id)
-    .eq('status', 'Available')
-    .select();
-  if (updateError) throw new Error(updateError.message);
-  if (!updated || updated.length === 0) throw new Error('Coupon was already sold — please try again');
-  const soldAt = updated[0].sold_at;
-
-  // Step 3: Wallet balances via adjust_wallet_balance RPC — a single atomic
-  // UPSERT in Postgres, not a read-then-write in app code. This is what
-  // actually prevents lost updates when multiple sales land on the same
-  // wallet at nearly the same moment (e.g. 5 staff selling concurrently).
-  const txId = txid();
-  const freeNote = isFree ? 'FREE COUPON (Manager-issued, 0 AED). ' : '';
-  await Promise.all([
-    supabase.rpc('adjust_wallet_balance', { p_wallet_id: walletId, p_delta: effectivePrice, p_owner_id: soldByUserId, p_owner_type: 'USER_SALES', p_allow_negative: true }),
-    supabase.rpc('adjust_wallet_balance', { p_wallet_id: 'w-system', p_delta: -effectivePrice, p_allow_negative: true }),
-    supabase.from('coupon_history').insert({ coupon_id: coupon.id, action: isFree ? 'SOLD_FREE' : 'SOLD', user_id: soldByUserId, details: freeNote + 'Sold to ' + (customerName || 'Walk-in') + ' for ' + effectivePrice + ' AED. ' + (remarks || '') }),
-    supabase.from('transactions').insert({ id: txId, from_wallet_id: 'w-system', to_wallet_id: walletId, amount: effectivePrice, type: 'SALE', timestamp: soldAt, remarks: freeNote + 'Coupon sold: ' + coupon.code, created_by_user_id: soldByUserId }),
-    logAction(soldByUserId, 'COUPON_SALE', freeNote + 'Sold coupon ' + coupon.code + ' for ' + effectivePrice + ' AED. Customer: ' + (customerName || 'None')),
-  ]);
-
-  return { success: true, transactionId: txId, couponCode: coupon.code, isFree: !!isFree, salePrice: effectivePrice };
+  // All of this now runs as ONE atomic transaction in Postgres (see
+  // sell_coupon_atomic in the SQL migration) instead of separate network
+  // requests. If anything fails partway through, nothing is committed —
+  // no more "coupon marked Sold with no matching wallet credit" risk.
+  const { data, error } = await supabase.rpc('sell_coupon_atomic', {
+    p_site_id: siteId,
+    p_profile_id: profileId,
+    p_sold_by_user_id: soldByUserId,
+    p_customer_name: customerName || '',
+    p_customer_phone: customerPhone || '',
+    p_remarks: remarks || '',
+    p_is_free: !!isFree,
+  });
+  if (error) throw new Error(error.message);
+  const row = data[0];
+  return { success: true, transactionId: row.transaction_id, couponCode: row.coupon_code, isFree: !!isFree, salePrice: Number(row.sale_price) };
 };
 
 export const collectCashFromStaff = async (collectedByUserId, collectedFromUserId, amount, siteId, remarks) => {
-  // FIX 5: Role hierarchy — Super Staff, Manager, Owner, Accountant can collect from Staff
-  const { data: collector } = await supabase.from('users').select('role').eq('id', collectedByUserId).single();
-  const ALLOWED_COLLECTORS = ['Super Staff', 'Manager', 'Owner', 'Accountant'];
-  if (!collector || !ALLOWED_COLLECTORS.includes(collector.role)) throw new Error('Insufficient permissions to collect from Staff');
-  const staffWalletId = 'w-' + collectedFromUserId + '-sales';
-  const superWalletId = 'w-' + collectedByUserId + '-collection';
-
-  // Deducting with p_allow_negative:false makes the balance check and the
-  // deduction one atomic statement in Postgres — no gap where a second,
-  // concurrent collection could sneak past the same "is there enough?" check.
-  const { error: deductError } = await supabase.rpc('adjust_wallet_balance', { p_wallet_id: staffWalletId, p_delta: -amount, p_allow_negative: false });
-  if (deductError) throw new Error('Insufficient balance or wallet not found for staff member.');
-
-  await supabase.rpc('adjust_wallet_balance', { p_wallet_id: superWalletId, p_delta: amount, p_owner_id: collectedByUserId, p_owner_type: 'USER_COLLECTION', p_allow_negative: true });
-
-  const txId = txid();
-  await supabase.from('transactions').insert({ id: txId, from_wallet_id: staffWalletId, to_wallet_id: superWalletId, amount, type: 'CASH_COLLECTION', created_by_user_id: collectedByUserId, remarks: remarks || 'Collected ' + amount + ' AED from staff' });
-  await supabase.from('cash_collections').insert({ id: uid(), collected_from_user_id: collectedFromUserId, collected_by_user_id: collectedByUserId, amount, site_id: siteId || null, remarks: remarks || '' });
-  await logAction(collectedByUserId, 'CASH_COLLECTION', 'Collected ' + amount + ' AED from staff ' + collectedFromUserId);
-  return { success: true, transactionId: txId };
+  // Runs as one atomic transaction (see collect_cash_simple_atomic) — the
+  // wallet debit, wallet credit, transaction record, and collection record
+  // either all commit together or none do.
+  const { data, error } = await supabase.rpc('collect_cash_simple_atomic', {
+    p_from_wallet_id: 'w-' + collectedFromUserId + '-sales',
+    p_collected_by_user_id: collectedByUserId,
+    p_collected_from_user_id: collectedFromUserId,
+    p_amount: amount,
+    p_site_id: siteId || null,
+    p_remarks: remarks || '',
+    p_allowed_roles: ['Super Staff', 'Manager', 'Owner', 'Accountant'],
+    p_permission_message: 'Insufficient permissions to collect from Staff',
+    p_log_details: 'Collected ' + amount + ' AED from staff ' + collectedFromUserId,
+  });
+  if (error) {
+    if (error.message && error.message.startsWith('Insufficient balance')) {
+      throw new Error('Insufficient balance or wallet not found for staff member.');
+    }
+    throw new Error(error.message);
+  }
+  return { success: true, transactionId: data[0].transaction_id };
 };
 
 export const collectCashFromSuperStaff = async (collectedByUserId, collectedFromUserId, splits, remarks) => {
-  // Role hierarchy — Manager, Owner, Accountant, Admin can collect from Super Staff
-  const { data: collector } = await supabase.from('users').select('role').eq('id', collectedByUserId).single();
-  const ALLOWED_FROM_SUPER = ['Manager', 'Owner', 'Accountant', 'Admin'];
-  if (!collector || !ALLOWED_FROM_SUPER.includes(collector.role)) throw new Error('Insufficient permissions to collect from Super Staff');
-
-  // Super Staff has TWO wallets: their own sales (-sales) + cash collected from Staff (-collection)
-  // Both must be drained together so the collector sees the full 20 AED, not just 10.
-  const salesWalletId      = 'w-' + collectedFromUserId + '-sales';
-  const collectionWalletId = 'w-' + collectedFromUserId + '-collection';
-  const { data: salesWallet }      = await supabase.from('wallets').select('balance').eq('id', salesWalletId).single();
-  const { data: collectionWallet } = await supabase.from('wallets').select('balance').eq('id', collectionWalletId).single();
-  const salesBal      = salesWallet      ? Number(salesWallet.balance)      : 0;
-  const collectionBal = collectionWallet ? Number(collectionWallet.balance) : 0;
-  const combinedBalance = salesBal + collectionBal;
-
+  // Runs as one atomic transaction (see collect_cash_dual_wallet_atomic) —
+  // draining sales wallet then collection wallet, crediting the collector,
+  // and recording it all happens together or not at all.
   const totalAmount = splits.reduce((sum, s) => sum + Number(s.amount), 0);
-  if (combinedBalance < totalAmount) throw new Error('Insufficient balance: ' + combinedBalance + ' AED (sales: ' + salesBal + ', collected: ' + collectionBal + ')');
+  const siteId = splits[0]?.siteId || null;
 
-  // Drain sales wallet first, then collection wallet for the remainder
-  const timestamp = new Date().toISOString();
-  const baseTxId = txid();
-  let remaining = totalAmount;
-
-  if (salesBal > 0 && remaining > 0) {
-    const deductFromSales = Math.min(salesBal, remaining);
-    await supabase.from('wallets').update({ balance: salesBal - deductFromSales }).eq('id', salesWalletId);
-    remaining -= deductFromSales;
-    await supabase.from('transactions').insert({ id: baseTxId+'-sales-debit', from_wallet_id: salesWalletId, to_wallet_id: 'w-' + collectedByUserId + '-collection', amount: deductFromSales, type: 'CASH_COLLECTION', timestamp, remarks: (remarks || 'Collected from Super Staff') + ' [own sales]', created_by_user_id: collectedByUserId });
-  }
-  if (collectionBal > 0 && remaining > 0) {
-    const deductFromCollection = Math.min(collectionBal, remaining);
-    await supabase.from('wallets').update({ balance: collectionBal - deductFromCollection }).eq('id', collectionWalletId);
-    remaining -= deductFromCollection;
-    await supabase.from('transactions').insert({ id: baseTxId+'-collection-debit', from_wallet_id: collectionWalletId, to_wallet_id: 'w-' + collectedByUserId + '-collection', amount: deductFromCollection, type: 'CASH_COLLECTION', timestamp, remarks: (remarks || 'Collected from Super Staff') + ' [staff collections]', created_by_user_id: collectedByUserId });
-  }
-
-  // Credit the collector's wallet
-  const collectorWalletId = 'w-' + collectedByUserId + '-collection';
-  const { data: collWallet } = await supabase.from('wallets').select('balance').eq('id', collectorWalletId).single();
-  if (collWallet) { await supabase.from('wallets').update({ balance: Number(collWallet.balance) + totalAmount }).eq('id', collectorWalletId); }
-  else { await supabase.from('wallets').insert({ id: collectorWalletId, owner_id: collectedByUserId, owner_type: 'USER_COLLECTION', balance: totalAmount }); }
-
-  await supabase.from('cash_collections').insert({ id: uid(), collected_from_user_id: collectedFromUserId, collected_by_user_id: collectedByUserId, amount: totalAmount, site_id: splits[0]?.siteId || null, remarks: remarks || '' });
-  await logAction(collectedByUserId, 'CASH_COLLECTION', 'Collected ' + totalAmount + ' AED from Super Staff ' + collectedFromUserId + ' (sales: ' + salesBal + ' + collected: ' + collectionBal + ')');
-  return { success: true };
+  const { data, error } = await supabase.rpc('collect_cash_dual_wallet_atomic', {
+    p_collected_by_user_id: collectedByUserId,
+    p_collected_from_user_id: collectedFromUserId,
+    p_total_amount: totalAmount,
+    p_site_id: siteId,
+    p_remarks: remarks || '',
+    p_allowed_roles: ['Manager', 'Owner', 'Accountant', 'Admin'],
+    p_permission_message: 'Insufficient permissions to collect from Super Staff',
+    p_default_remark: 'Collected from Super Staff',
+    p_sales_suffix: ' [own sales]',
+    p_collection_suffix: ' [staff collections]',
+    p_log_label: 'Super Staff',
+  });
+  if (error) throw new Error(error.message);
+  return { success: true, transactionId: data[0].transaction_id };
 };
 
 export const walletAdjustment = async (walletId, amount, remarks, currentUserId) => {
@@ -494,62 +443,38 @@ export const resetDb = async () => {
 // collecting from Staff/Super Staff (their '-collection' wallet) — drain both, same
 // pattern used for Super Staff, so the collector sees the Manager's full balance.
 export const collectCashFromManager = async (collectedByUserId, collectedFromUserId, amount, siteId, remarks) => {
-  const { data: collector } = await supabase.from('users').select('role').eq('id', collectedByUserId).single();
-  const ALLOWED = ['Owner', 'Accountant'];
-  if (!collector || !ALLOWED.includes(collector.role)) throw new Error('Insufficient permissions to collect from Manager');
-
-  const salesWalletId      = 'w-' + collectedFromUserId + '-sales';
-  const collectionWalletId = 'w-' + collectedFromUserId + '-collection';
-  const { data: salesWallet }      = await supabase.from('wallets').select('balance').eq('id', salesWalletId).single();
-  const { data: collectionWallet } = await supabase.from('wallets').select('balance').eq('id', collectionWalletId).single();
-  const salesBal      = salesWallet      ? Number(salesWallet.balance)      : 0;
-  const collectionBal = collectionWallet ? Number(collectionWallet.balance) : 0;
-  const combinedBalance = salesBal + collectionBal;
-  if (combinedBalance < amount) throw new Error('Insufficient balance: ' + combinedBalance + ' AED (sales: ' + salesBal + ', collected: ' + collectionBal + ')');
-
-  const collectorWalletId = 'w-' + collectedByUserId + '-collection';
-  const { data: collWallet } = await supabase.from('wallets').select('balance').eq('id', collectorWalletId).single();
-
-  let remaining = amount;
-  const timestamp = new Date().toISOString();
-  const baseTxId = txid();
-
-  if (salesBal > 0 && remaining > 0) {
-    const deduct = Math.min(salesBal, remaining);
-    await supabase.from('wallets').update({ balance: salesBal - deduct }).eq('id', salesWalletId);
-    remaining -= deduct;
-    await supabase.from('transactions').insert({ id: baseTxId + '-sales-debit', from_wallet_id: salesWalletId, to_wallet_id: collectorWalletId, amount: deduct, type: 'CASH_COLLECTION', timestamp, remarks: (remarks || 'Collected from Manager') + ' [own sales]', created_by_user_id: collectedByUserId });
-  }
-  if (collectionBal > 0 && remaining > 0) {
-    const deduct = Math.min(collectionBal, remaining);
-    await supabase.from('wallets').update({ balance: collectionBal - deduct }).eq('id', collectionWalletId);
-    remaining -= deduct;
-    await supabase.from('transactions').insert({ id: baseTxId + '-collection-debit', from_wallet_id: collectionWalletId, to_wallet_id: collectorWalletId, amount: deduct, type: 'CASH_COLLECTION', timestamp, remarks: (remarks || 'Collected from Manager') + ' [collected cash]', created_by_user_id: collectedByUserId });
-  }
-
-  if (collWallet) { await supabase.from('wallets').update({ balance: Number(collWallet.balance) + amount }).eq('id', collectorWalletId); }
-  else { await supabase.from('wallets').insert({ id: collectorWalletId, owner_id: collectedByUserId, owner_type: 'USER_COLLECTION', balance: amount }); }
-
-  await supabase.from('cash_collections').insert({ id: uid(), collected_from_user_id: collectedFromUserId, collected_by_user_id: collectedByUserId, amount, site_id: siteId || null, remarks: remarks || '' });
-  await logAction(collectedByUserId, 'CASH_COLLECTION', 'Collected ' + amount + ' AED from Manager ' + collectedFromUserId + ' (sales: ' + salesBal + ' + collected: ' + collectionBal + ')');
-  return { success: true, transactionId: baseTxId };
+  // Runs as one atomic transaction (see collect_cash_dual_wallet_atomic).
+  const { data, error } = await supabase.rpc('collect_cash_dual_wallet_atomic', {
+    p_collected_by_user_id: collectedByUserId,
+    p_collected_from_user_id: collectedFromUserId,
+    p_total_amount: amount,
+    p_site_id: siteId || null,
+    p_remarks: remarks || '',
+    p_allowed_roles: ['Owner', 'Accountant'],
+    p_permission_message: 'Insufficient permissions to collect from Manager',
+    p_default_remark: 'Collected from Manager',
+    p_sales_suffix: ' [own sales]',
+    p_collection_suffix: ' [collected cash]',
+    p_log_label: 'Manager',
+  });
+  if (error) throw new Error(error.message);
+  return { success: true, transactionId: data[0].transaction_id };
 };
 
 // FIX 5: Collect from Owner (Accountant only)
 export const collectCashFromOwner = async (collectedByUserId, collectedFromUserId, amount, siteId, remarks) => {
-  const { data: collector } = await supabase.from('users').select('role').eq('id', collectedByUserId).single();
-  if (!collector || collector.role !== 'Accountant') throw new Error('Only Accountant can collect from Owner');
-  const ownerWalletId = 'w-' + collectedFromUserId + '-collection';
-  const { data: ownerWallet } = await supabase.from('wallets').select('balance').eq('id', ownerWalletId).single();
-  if (!ownerWallet || Number(ownerWallet.balance) < amount) throw new Error('Insufficient balance: ' + (ownerWallet?.balance || 0) + ' AED');
-  const collectorWalletId = 'w-' + collectedByUserId + '-collection';
-  const { data: collWallet } = await supabase.from('wallets').select('balance').eq('id', collectorWalletId).single();
-  await supabase.from('wallets').update({ balance: Number(ownerWallet.balance) - amount }).eq('id', ownerWalletId);
-  if (collWallet) { await supabase.from('wallets').update({ balance: Number(collWallet.balance) + amount }).eq('id', collectorWalletId); }
-  else { await supabase.from('wallets').insert({ id: collectorWalletId, owner_id: collectedByUserId, owner_type: 'USER_COLLECTION', balance: amount }); }
-  const txId = txid();
-  await supabase.from('transactions').insert({ id: txId, from_wallet_id: ownerWalletId, to_wallet_id: collectorWalletId, amount, type: 'CASH_COLLECTION', created_by_user_id: collectedByUserId, remarks: remarks || 'Collected ' + amount + ' AED from owner' });
-  await supabase.from('cash_collections').insert({ id: uid(), collected_from_user_id: collectedFromUserId, collected_by_user_id: collectedByUserId, amount, site_id: siteId || null, remarks: remarks || '' });
-  await logAction(collectedByUserId, 'CASH_COLLECTION', 'Collected ' + amount + ' AED from Owner ' + collectedFromUserId);
-  return { success: true, transactionId: txId };
+  // Runs as one atomic transaction (see collect_cash_simple_atomic).
+  const { data, error } = await supabase.rpc('collect_cash_simple_atomic', {
+    p_from_wallet_id: 'w-' + collectedFromUserId + '-collection',
+    p_collected_by_user_id: collectedByUserId,
+    p_collected_from_user_id: collectedFromUserId,
+    p_amount: amount,
+    p_site_id: siteId || null,
+    p_remarks: remarks || '',
+    p_allowed_roles: ['Accountant'],
+    p_permission_message: 'Only Accountant can collect from Owner',
+    p_log_details: 'Collected ' + amount + ' AED from Owner ' + collectedFromUserId,
+  });
+  if (error) throw new Error(error.message);
+  return { success: true, transactionId: data[0].transaction_id };
 };
