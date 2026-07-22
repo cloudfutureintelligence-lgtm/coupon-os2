@@ -9,8 +9,8 @@ import { Plus, DollarSign, Users, Loader2 } from 'lucide-react';
 // Accountant   → collect from Staff + Super Staff + Manager + Owner
 
 const ROLE_CAN_COLLECT_FROM = {
-  'Super Staff': ['Staff'],
-  'Manager':     ['Staff', 'Super Staff'],
+  'Super Staff': ['Staff', 'Super Staff'],
+  'Manager':     ['Staff', 'Super Staff', 'Manager'],
   'Owner':       ['Staff', 'Super Staff', 'Manager'],
   'Accountant':  ['Staff', 'Super Staff', 'Manager', 'Owner'],
   'Admin':       ['Staff', 'Super Staff', 'Manager', 'Owner'],
@@ -132,11 +132,12 @@ export const CashCollection = () => {
   // is strictly limited to users assigned to at least one of their own sites.
   const getUsersByRole = (role) => {
     if (myRole === 'Admin') {
-      return db.users.filter(u => u.role === role);
+      return db.users.filter(u => u.role === role && u.id !== currentUser.id);
     }
     const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
     return db.users.filter(u => {
       if (u.role !== role) return false;
+      if (u.id === currentUser.id) return false;
       const userSites = db.userSites.filter(us => us.userId === u.id).map(us => us.siteId);
       return userSites.some(sid => mySiteIds.includes(sid));
     });
