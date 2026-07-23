@@ -179,6 +179,18 @@ export const AppProvider = ({ children }) => {
 
     const visibleRoles = getVisibleRoles();
 
+    // Which user IDs share a site with the current user (site-scoping, same
+    // rule as the low-stock alerts above). Only Admin bypasses this — every
+    // other role must only ever see activity from people at their own sites.
+    const isGlobal = GLOBAL_ROLES.includes(role);
+    const visibleUserIds = isGlobal
+      ? null // null = everyone
+      : new Set(
+          (dbState.userSites || [])
+            .filter(us => userSiteIds.includes(us.siteId))
+            .map(us => us.userId)
+        );
+
     // Excluded action types
     const EXCLUDED_ACTIONS = ['LOGIN', 'LOGOUT', 'SALE', 'COUPON_SALE'];
 
@@ -186,13 +198,16 @@ export const AppProvider = ({ children }) => {
       .filter(log => {
         // Skip login/logout/sale events entirely
         if (EXCLUDED_ACTIONS.some(ex => log.action.includes(ex))) return false;
+        // Always include own logs
+        if (log.userId === currentUser.id) return true;
         // Role filter
         if (visibleRoles !== null) {
           const logUser = dbState.users.find(u => u.id === log.userId);
           const logUserRole = logUser?.role || '';
-          // Always include own logs; otherwise check visible roles
-          if (log.userId !== currentUser.id && !visibleRoles.includes(logUserRole)) return false;
+          if (!visibleRoles.includes(logUserRole)) return false;
         }
+        // Site filter — the log's user must share a site with the current user
+        if (visibleUserIds !== null && !visibleUserIds.has(log.userId)) return false;
         return true;
       })
       .slice(0, 8)
