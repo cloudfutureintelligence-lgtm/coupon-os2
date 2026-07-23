@@ -15,7 +15,23 @@ import { Receipt, Search, Filter, X, ChevronLeft, ChevronRight, Download } from 
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 50;
-const todayStr  = () => new Date().toISOString().slice(0, 10);
+
+// ── Date helpers (all locked to Dubai / GST time, regardless of viewer's device) ──
+const DUBAI_TZ = 'Asia/Dubai';
+
+// "YYYY-MM-DD" for a given moment, as that date is in Dubai (not UTC, not local device tz)
+const toDubaiDateStr = (dateInput) => new Intl.DateTimeFormat('en-CA', { timeZone: DUBAI_TZ }).format(new Date(dateInput));
+
+const todayStr = () => toDubaiDateStr(new Date());
+
+// Date + time display, e.g. "23 Jul 2026, 02:45 PM" — always Dubai time
+const formatDubaiDateTime = (dateInput) => {
+  if (!dateInput) return '—';
+  return new Date(dateInput).toLocaleString('en-GB', {
+    timeZone: DUBAI_TZ, day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+};
 
 export const SalesLog = () => {
   const { db, currentUser } = useApp();
@@ -62,8 +78,8 @@ export const SalesLog = () => {
     
     // Only apply date filters if search input is empty
     if (!search.trim()) {
-      if (dateFrom) list = list.filter(c => c.soldAt && c.soldAt.slice(0, 10) >= dateFrom);
-      if (dateTo)   list = list.filter(c => c.soldAt && c.soldAt.slice(0, 10) <= dateTo);
+      if (dateFrom) list = list.filter(c => c.soldAt && toDubaiDateStr(c.soldAt) >= dateFrom);
+      if (dateTo)   list = list.filter(c => c.soldAt && toDubaiDateStr(c.soldAt) <= dateTo);
     }
 
     if (search.trim()) {
@@ -193,7 +209,7 @@ export const SalesLog = () => {
       row.push(seller?.name || '', seller?.role || '');
       if (showRevenue) row.push(log.salePrice ?? '', log.isFree ? 'Yes' : 'No');
       row.push(log.customerName || '', log.customerPhone || '',
-        log.soldAt ? new Date(log.soldAt).toLocaleString() : '');
+        log.soldAt ? formatDubaiDateTime(log.soldAt) : '');
       return row;
     });
 
@@ -204,7 +220,7 @@ export const SalesLog = () => {
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url;
-    a.download = 'sales_log_' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.download = 'sales_log_' + todayStr() + '.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -397,7 +413,7 @@ export const SalesLog = () => {
                       <td>{log.customerName || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                       <td>{log.customerPhone || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                       <td style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>
-                        {log.soldAt ? new Date(log.soldAt).toLocaleString() : '—'}
+                        {log.soldAt ? formatDubaiDateTime(log.soldAt) : '—'}
                       </td>
                     </tr>
                   );
