@@ -520,6 +520,34 @@ export const Sales = () => {
                     )}
                   </div>
 
+                  {/* Date & Package summary */}
+                  {pendingSale && (
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: '0.78rem',
+                      color: 'var(--text-2)',
+                      padding: '0.6rem 0.85rem',
+                      background: 'var(--surface-2)',
+                      borderRadius: 'var(--radius)',
+                      marginBottom: '1.25rem',
+                    }}>
+                      <span>
+                        <span style={{ color: 'var(--text-3)' }}>Package: </span>
+                        <strong style={{ color: 'var(--text)' }}>
+                          {db.couponProfiles.find(p => p.id === pendingSale.profileId)?.name || '—'}
+                        </strong>
+                      </span>
+                      <span>
+                        <span style={{ color: 'var(--text-3)' }}>Date: </span>
+                        <strong style={{ color: 'var(--text)' }}>
+                          {new Date(pendingSale.soldAt).toLocaleString()}
+                        </strong>
+                      </span>
+                    </div>
+                  )}
+
                   {/* SMS section — only if SMS is enabled for this site */}
                   {smsEnabledForSite && (
                   <div style={{
