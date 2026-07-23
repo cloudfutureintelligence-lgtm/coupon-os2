@@ -542,7 +542,7 @@ export const Sales = () => {
                       <span>
                         <span style={{ color: 'var(--text-3)' }}>Date: </span>
                         <strong style={{ color: 'var(--text)' }}>
-                          {new Date(pendingSale.soldAt).toLocaleString()}
+                          {new Date(pendingSale.soldAt).toLocaleDateString()}
                         </strong>
                       </span>
                     </div>
