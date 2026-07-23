@@ -14,8 +14,28 @@ import { SalesAnalyticsPanel } from '../components/SalesAnalyticsPanel';
 //   Admin        → all sales (all sites, filterable)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Date helpers ──────────────────────────────────────────────────────────────
-const toDateStr = (d) => d.toISOString().slice(0, 10); // "YYYY-MM-DD"
+// ── Date helpers (all locked to Dubai / GST time, regardless of viewer's device) ──
+const DUBAI_TZ = 'Asia/Dubai';
+
+// "YYYY-MM-DD" for a given moment, as that date is in Dubai (not UTC, not local device tz)
+const toDateStr = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: DUBAI_TZ }).format(d);
+
+// Date-only display, e.g. "23 Jul 2026" — always Dubai's calendar date
+const formatDubaiDate = (dateInput) => {
+  if (!dateInput) return '—';
+  return new Date(dateInput).toLocaleDateString('en-GB', {
+    timeZone: DUBAI_TZ, day: '2-digit', month: 'short', year: 'numeric',
+  });
+};
+
+// Date + time display, e.g. "23 Jul 2026, 02:45 PM" — always Dubai time
+const formatDubaiDateTime = (dateInput) => {
+  if (!dateInput) return '—';
+  return new Date(dateInput).toLocaleString('en-GB', {
+    timeZone: DUBAI_TZ, day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+};
 
 const todayStr  = () => toDateStr(new Date());
 
@@ -245,7 +265,7 @@ export const Sales = () => {
                     <td>{log.customerName || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                     <td>{log.customerPhone || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                     <td style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>
-                      {log.soldAt ? new Date(log.soldAt).toLocaleString() : '—'}
+                      {log.soldAt ? formatDubaiDateTime(log.soldAt) : '—'}
                     </td>
                   </tr>
                 );
@@ -542,7 +562,7 @@ export const Sales = () => {
                       <span>
                         <span style={{ color: 'var(--text-3)' }}>Date: </span>
                         <strong style={{ color: 'var(--text)' }}>
-                          {new Date(pendingSale.soldAt).toLocaleDateString()}
+                          {formatDubaiDate(pendingSale.soldAt)}
                         </strong>
                       </span>
                     </div>
