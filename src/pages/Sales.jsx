@@ -89,6 +89,10 @@ export const Sales = () => {
   const handleConfirmSale = async (e) => {
     e.preventDefault();
     if (!targetProfile || saleInFlightRef.current) return;
+    if (custPhone.length !== 10) {
+      showToast('Customer phone number is required (10 digits)');
+      return;
+    }
     saleInFlightRef.current = true;
     setIsSelling(true);
     try {
@@ -417,8 +421,28 @@ export const Sales = () => {
                     <input type="text" className="text-input-field" placeholder="e.g. John Doe" value={custName} onChange={e => setCustName(e.target.value)} disabled={isSelling} />
                   </div>
                   <div className="form-input-wrapper">
-                    <label className="form-field-label">Customer Phone (Optional)</label>
-                    <input type="text" className="text-input-field" placeholder="e.g. +971501234567" value={custPhone} onChange={e => setCustPhone(e.target.value)} disabled={isSelling} />
+                    <label className="form-field-label">Customer Phone *</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={10}
+                      className="text-input-field"
+                      placeholder="e.g. 0501234567"
+                      value={custPhone}
+                      onChange={e => setCustPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                      onKeyDown={e => {
+                        if (['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+                        if ((e.ctrlKey || e.metaKey) && ['a', 'c', 'v', 'x'].includes(e.key.toLowerCase())) return;
+                        if (!/^[0-9]$/.test(e.key)) e.preventDefault();
+                      }}
+                      disabled={isSelling}
+                    />
+                    {custPhone.length !== 10 && (
+                      <small style={{ color: 'var(--red)', fontSize: '0.68rem', marginTop: '0.2rem', display: 'block' }}>
+                        {custPhone ? 'Phone number must be exactly 10 digits' : 'Phone number is required'}
+                      </small>
+                    )}
                   </div>
                   <div className="form-input-wrapper">
                     <label className="form-field-label">Sale Remarks / Notes</label>
@@ -427,8 +451,8 @@ export const Sales = () => {
                 </div>
                 <div className="app-modal-footer">
                   <button type="button" className="action-btn btn-outlined" onClick={() => setSaleModalOpen(false)} disabled={isSelling}>Cancel</button>
-                  <button type="submit" className={`action-btn ${isFreeCoupon ? 'btn-brand-blue' : 'btn-brand-green'}`} disabled={isSelling}
-                    style={{ minWidth: '190px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                  <button type="submit" className={`action-btn ${isFreeCoupon ? 'btn-brand-blue' : 'btn-brand-green'}`} disabled={isSelling || custPhone.length !== 10}
+                    style={{ minWidth: '190px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: (custPhone.length !== 10 && !isSelling) ? 0.5 : 1, cursor: (custPhone.length !== 10 && !isSelling) ? 'not-allowed' : 'pointer' }}>
                     {isSelling
                       ? <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Processing…</>
                       : isFreeCoupon
