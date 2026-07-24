@@ -283,7 +283,9 @@ export const Sales = () => {
     const assignedProfileIds = new Set(
       (db.sitePrices || []).filter(sp => sp.siteId === selectedSiteId).map(sp => sp.profileId)
     );
-    let list = db.couponProfiles.filter(p => assignedProfileIds.has(p.id));
+    let list = db.couponProfiles
+      .filter(p => assignedProfileIds.has(p.id))
+      .sort((a, b) => (a.validityDays || 0) - (b.validityDays || 0));
     if (selectedProfileId !== 'all') list = list.filter(p => p.id === selectedProfileId);
 
     // Subscription gate — selling (and everything else on this page) stops for an expired site
@@ -319,7 +321,10 @@ export const Sales = () => {
         <div className="filters-container-row">
           <select className="filter-dropdown-select" value={selectedProfileId} onChange={e => setSelectedProfileId(e.target.value)}>
             <option value="all">All Profiles</option>
-            {db.couponProfiles.filter(p => assignedProfileIds.has(p.id)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {db.couponProfiles
+              .filter(p => assignedProfileIds.has(p.id))
+              .sort((a, b) => (a.validityDays || 0) - (b.validityDays || 0))
+              .map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
 
