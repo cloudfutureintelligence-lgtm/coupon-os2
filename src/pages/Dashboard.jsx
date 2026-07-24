@@ -500,7 +500,11 @@ export const Dashboard = ({ setActivePage }) => {
   // ═══════════════════════════════════════════
   const renderManagerDashboard = () => {
     const managerSiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
-    const managerSoldCoupons = db.coupons.filter(c => c.status === 'Sold' && managerSiteIds.includes(c.siteId));
+    const managerSoldCoupons = db.coupons.filter(c =>
+      c.status === 'Sold' &&
+      managerSiteIds.includes(c.siteId) &&
+      (selectedSiteId === 'all' || c.siteId === selectedSiteId)
+    );
 
     return (
       <>
