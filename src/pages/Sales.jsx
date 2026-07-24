@@ -283,9 +283,13 @@ export const Sales = () => {
     const assignedProfileIds = new Set(
       (db.sitePrices || []).filter(sp => sp.siteId === selectedSiteId).map(sp => sp.profileId)
     );
+    const validitySortValue = (p) => {
+      const n = parseInt(p.validityDays, 10);
+      return Number.isNaN(n) ? Infinity : n; // unknown/invalid validity sinks to the end
+    };
     let list = db.couponProfiles
       .filter(p => assignedProfileIds.has(p.id))
-      .sort((a, b) => (a.validityDays || 0) - (b.validityDays || 0));
+      .sort((a, b) => validitySortValue(a) - validitySortValue(b));
     if (selectedProfileId !== 'all') list = list.filter(p => p.id === selectedProfileId);
 
     // Subscription gate — selling (and everything else on this page) stops for an expired site
@@ -323,7 +327,7 @@ export const Sales = () => {
             <option value="all">All Profiles</option>
             {db.couponProfiles
               .filter(p => assignedProfileIds.has(p.id))
-              .sort((a, b) => (a.validityDays || 0) - (b.validityDays || 0))
+              .sort((a, b) => validitySortValue(a) - validitySortValue(b))
               .map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
