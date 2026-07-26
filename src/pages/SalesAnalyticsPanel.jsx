@@ -3,15 +3,37 @@ import { useApp } from '../context/AppContext';
 import { BarChart2, Calendar, Download, Printer, Filter, Gift } from 'lucide-react';
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
-const toDateStr = (d) => d.toISOString().slice(0, 10);
+// All dates are normalized to Asia/Dubai (UTC+4), regardless of the viewer's own
+// location/timezone (staff may be in UAE, KSA, or Qatar). This keeps "today" and
+// the business-day boundary consistent for everyone, and matches Dubai midnight
+// rather than each user's local midnight or the server's UTC midnight.
+const DUBAI_TZ = 'Asia/Dubai';
+const toDateStr = (d) => {
+  // en-CA locale formats as YYYY-MM-DD, which is what we want for string comparisons
+  return new Intl.DateTimeFormat('en-CA', { timeZone: DUBAI_TZ }).format(d);
+};
 const todayStr       = () => toDateStr(new Date());
-const thisMonthStart = () => { const d = new Date(); d.setDate(1); return toDateStr(d); };
+const thisMonthStart = () => {
+  // Get today's Dubai date, then zero out the day-of-month
+  const [y, m] = todayStr().split('-');
+  return `${y}-${m}-01`;
+};
 const isInRange = (isoStr, from, to) => {
   if (!isoStr) return false;
-  const d = isoStr.slice(0, 10);
+  const d = toDateStr(new Date(isoStr));
   if (from && d < from) return false;
   if (to   && d > to  ) return false;
   return true;
+};
+// Format a sale timestamp in Dubai time (not the viewer's local browser time), so a
+// transaction shows the same date/time whether viewed from Dubai, KSA, or Qatar.
+const formatDubaiDateTime = (isoStr) => {
+  if (!isoStr) return '—';
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: DUBAI_TZ,
+    year: 'numeric', month: 'short', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  }).format(new Date(isoStr));
 };
 
 /**
@@ -135,7 +157,7 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
         const site = db.sites.find(s => s.id === c.siteId)?.name || c.siteId;
         const user = db.users.find(u => u.id === c.soldByUserId)?.name || c.soldByUserId;
         const profit = (c.salePrice || 0) - (c.cost || 0);
-        return [c.code, prof, site, user, c.salePrice, c.cost, profit, c.isFree ? 'Yes' : 'No', new Date(c.soldAt).toLocaleString()];
+        return [c.code, prof, site, user, c.salePrice, c.cost, profit, c.isFree ? 'Yes' : 'No', formatDubaiDateTime(c.soldAt)];
       }),
     ];
 
@@ -614,7 +636,7 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
                         <td style={{ fontWeight: 600, color: 'var(--green)' }}>{c.salePrice} AED</td>
                         <td>{c.cost} AED</td>
                         <td style={{ fontWeight: 600, color: profit >= 0 ? 'var(--green)' : 'var(--red)' }}>{profit} AED</td>
-                        <td style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>{new Date(c.soldAt).toLocaleString()}</td>
+                        <td style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>{formatDubaiDateTime(c.soldAt)}</td>
                       </tr>
                     );
                   })}
