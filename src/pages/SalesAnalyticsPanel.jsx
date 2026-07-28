@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { BarChart2, Calendar, Download, Printer, Filter, Gift } from 'lucide-react';
 
@@ -49,6 +49,24 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
   const [dateMode, setDateMode]     = useState('today');
   const [customFrom, setCustomFrom] = useState(todayStr());
   const [customTo, setCustomTo]     = useState(todayStr());
+
+  // The panel is often left open across the Dubai midnight boundary (e.g. overnight
+  // staff dashboards). Nothing else here would force a re-render at that moment, so
+  // "today" would silently stay frozen on the previous day until some unrelated state
+  // change happened to occur. This tick forces a re-render every minute (and whenever
+  // the tab regains focus) so todayStr()/thisMonthStart() get re-evaluated live.
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => forceTick(t => t + 1), 60 * 1000);
+    const onFocus = () => forceTick(t => t + 1);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, []);
 
   if (!currentUser) return null;
 
