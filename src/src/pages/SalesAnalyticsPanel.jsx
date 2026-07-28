@@ -66,6 +66,12 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
   const [dateMode, setDateMode]     = useState('today');
   const [customFrom, setCustomFrom] = useState(todayStr());
   const [customTo, setCustomTo]     = useState(todayStr());
+  // Tracks whether the user has manually picked a "To" date. Until they do,
+  // customTo auto-follows the live "today" value below — otherwise, if this
+  // panel was mounted before midnight, customTo freezes on yesterday's date
+  // and, via the max={customTo} constraint on "From", silently disables
+  // picking today's date at all in the date picker.
+  const [customToTouched, setCustomToTouched] = useState(false);
 
   // The panel is often left open across the Dubai midnight boundary (e.g. overnight
   // staff dashboards). Nothing else here would force a re-render at that moment, so
@@ -84,6 +90,18 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
       document.removeEventListener('visibilitychange', onFocus);
     };
   }, []);
+
+  // Keep customTo pinned to the live "today" value as long as the user hasn't
+  // manually picked their own "To" date — this is what actually fixes the
+  // stale-max bug described above. Runs on mount and every time the tick above
+  // fires a re-render, so it self-heals within a minute even if the tab has
+  // been open since before midnight.
+  useEffect(() => {
+    if (!customToTouched) {
+      const fresh = todayStr();
+      setCustomTo(prev => (prev === fresh ? prev : fresh));
+    }
+  });
 
   if (!currentUser) return null;
 
@@ -352,14 +370,14 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <Calendar size={13} style={{ color: 'var(--text-3)' }} />
               <label style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>From</label>
-              <input type="date" value={customFrom} max={customTo}
+              <input type="date" value={customFrom} max={customTo || todayStr()}
                 onChange={e => setCustomFrom(e.target.value)}
                 style={{ fontSize: '0.78rem', padding: '0.2rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)' }} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <label style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>To</label>
               <input type="date" value={customTo} min={customFrom} max={todayStr()}
-                onChange={e => setCustomTo(e.target.value)}
+                onChange={e => { setCustomToTouched(true); setCustomTo(e.target.value); }}
                 style={{ fontSize: '0.78rem', padding: '0.2rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text)' }} />
             </div>
           </div>
