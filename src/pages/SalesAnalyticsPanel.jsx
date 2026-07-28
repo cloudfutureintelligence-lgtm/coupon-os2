@@ -18,11 +18,20 @@ const thisMonthStart = () => {
   const [y, m] = todayStr().split('-');
   return `${y}-${m}-01`;
 };
+// Asia/Dubai has a fixed UTC+4 offset year-round (no DST), so we can build an exact
+// instant for the start/end of a given Dubai calendar date just by appending the
+// offset. This gives us real timestamp boundaries — 00:00:00.000 through
+// 23:59:59.999 Dubai time — instead of comparing YYYY-MM-DD strings, so a sale at
+// e.g. 23:58 Dubai time is correctly included right up to the last millisecond.
+const dubaiStartOfDay = (dateStr) => new Date(`${dateStr}T00:00:00.000+04:00`);
+const dubaiEndOfDay   = (dateStr) => new Date(`${dateStr}T23:59:59.999+04:00`);
+
 const isInRange = (isoStr, from, to) => {
   if (!isoStr) return false;
-  const d = toDateStr(new Date(isoStr));
-  if (from && d < from) return false;
-  if (to   && d > to  ) return false;
+  const t = new Date(isoStr).getTime();
+  if (Number.isNaN(t)) return false;
+  if (from && t < dubaiStartOfDay(from).getTime()) return false;
+  if (to   && t > dubaiEndOfDay(to).getTime())     return false;
   return true;
 };
 // Format a sale timestamp in Dubai time (not the viewer's local browser time), so a
