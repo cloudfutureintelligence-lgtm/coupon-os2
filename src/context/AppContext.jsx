@@ -77,6 +77,29 @@ export const AppProvider = ({ children }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Background refresh ─────────────────────────────────────────────────────
+  // db was previously only refetched once on mount, plus after actions THIS tab
+  // itself performed. A tab left open (e.g. overnight, or across the Dubai
+  // midnight boundary) never saw sales made from other devices/staff, and any
+  // "today" style filtering was silently working off a stale snapshot rather
+  // than a genuinely stale calculation. Poll periodically and on tab focus so
+  // the data itself stays live, not just the date-range math around it.
+  useEffect(() => {
+    if (!currentUser) return;
+    const interval = setInterval(() => { refreshDbState(); }, 60 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshDbState();
+    };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser]);
+
   // Theme
   useEffect(() => {
     const savedTheme = localStorage.getItem('coupon_theme') || 'light';
