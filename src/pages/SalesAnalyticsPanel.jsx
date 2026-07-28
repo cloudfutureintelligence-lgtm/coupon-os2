@@ -18,6 +18,14 @@ const thisMonthStart = () => {
   const [y, m] = todayStr().split('-');
   return `${y}-${m}-01`;
 };
+const thisMonthEnd = () => {
+  // Last calendar day of the current Dubai month — 28/29/30/31 as appropriate
+  // (day 0 of "next month" is a standard JS trick for "last day of this month",
+  // and correctly accounts for leap years for February).
+  const [y, m] = todayStr().split('-').map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+};
 // Asia/Dubai has a fixed UTC+4 offset year-round (no DST), so we can build an exact
 // instant for the start/end of a given Dubai calendar date just by appending the
 // offset. This gives us real timestamp boundaries — 00:00:00.000 through
@@ -83,7 +91,7 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
 
   const getRange = () => {
     if (dateMode === 'today')  return { from: todayStr(),       to: todayStr() };
-    if (dateMode === 'month')  return { from: thisMonthStart(), to: todayStr() };
+    if (dateMode === 'month')  return { from: thisMonthStart(), to: thisMonthEnd() };
     return { from: customFrom, to: customTo };
   };
 
