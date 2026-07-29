@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck, Gift, Lock } from 'lucide-react';
+import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck, Gift, Lock, Printer, Share2, ArrowLeft } from 'lucide-react';
 import { sendCouponSms, normalisePhone, isAllowedForProvider } from '../utils/smsService';
 import { SalesAnalyticsPanel } from '../components/SalesAnalyticsPanel';
 
@@ -541,6 +541,39 @@ export const Sales = () => {
             window.open(`https://wa.me/${digits}?text=${encodeURIComponent(shareMessage())}`, '_blank');
           };
 
+          // ── Print — renders only the #couponPrintSlip node via CSS, so it
+          // works identically on desktop and mobile browsers (no popups,
+          // no new tabs — just the OS's native print/AirPrint sheet). ──────
+          const handlePrint = () => {
+            window.print();
+          };
+
+          // ── Universal "Share via…" — uses the device's native share sheet
+          // (WhatsApp, Telegram, SMS, Email, AirDrop, Notes, etc. — whatever
+          // is installed) with a clipboard-copy fallback for browsers/desktops
+          // that don't support the Web Share API. ─────────────────────────
+          const handleNativeShare = async () => {
+            const text = shareMessage();
+            if (navigator.share) {
+              try {
+                await navigator.share({ title: 'Internet Access Code', text });
+              } catch (err) {
+                if (err?.name !== 'AbortError') console.error(err);
+              }
+              return;
+            }
+            if (navigator.clipboard?.writeText) {
+              try {
+                await navigator.clipboard.writeText(text);
+                showToast('Code copied — paste it anywhere to share');
+                return;
+              } catch (err) {
+                console.error(err);
+              }
+            }
+            showToast('Sharing is not supported on this device');
+          };
+
           const handleSendSms = async () => {
             if (!phoneValid || smsSending || smsSent) return;
             setSmsSending(true);
@@ -609,6 +642,71 @@ export const Sales = () => {
                       </span>
                     </div>
                   )}
+
+                  {/* Print / Back / Share-via-all action row.
+                      Works the same on desktop and mobile — printing renders
+                      only the hidden #couponPrintSlip node below (everything
+                      else is visibility:hidden during print), so it's just
+                      the browser/OS's native print (or AirPrint) sheet — no
+                      popups or new tabs that mobile browsers tend to block. */}
+                  <style>{`
+                    .coupon-print-slip { display: none; }
+                    @media print {
+                      body * { visibility: hidden !important; }
+                      .coupon-print-slip, .coupon-print-slip * { visibility: visible !important; }
+                      .coupon-print-slip {
+                        display: block !important;
+                        position: fixed; top: 0; left: 0; width: 100%;
+                        padding: 32px; box-sizing: border-box;
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+                      }
+                    }
+                  `}</style>
+                  <div id="couponPrintSlip" className="coupon-print-slip">
+                    <h2 style={{ textAlign: 'center', color: pendingSale?.isFree ? '#2563eb' : '#16a34a', margin: '0 0 6px', fontSize: '20px' }}>
+                      {pendingSale?.isFree ? '✓ Free Coupon Issued' : '✓ Sale Completed Successfully'}
+                    </h2>
+                    <p style={{ textAlign: 'center', fontSize: '13px', color: '#555', margin: '0 0 20px' }}>
+                      Share this code with the customer to activate their internet access:
+                    </p>
+                    <div style={{ border: `2px dashed ${pendingSale?.isFree ? '#2563eb' : '#16a34a'}`, borderRadius: '10px', padding: '20px', textAlign: 'center', marginBottom: '18px' }}>
+                      <span style={{ display: 'block', fontSize: '11px', letterSpacing: '.08em', textTransform: 'uppercase', color: '#888', marginBottom: '6px' }}>Access Code</span>
+                      <div style={{ fontSize: '32px', fontWeight: 800, letterSpacing: '2px', fontFamily: "'Courier New', monospace" }}>{soldCouponCode}</div>
+                    </div>
+                    {pendingSale && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#333', borderTop: '1px solid #ddd', paddingTop: '12px' }}>
+                        <span>Package: <strong>{db.couponProfiles.find(p => p.id === pendingSale.profileId)?.name || '—'}</strong></span>
+                        <span>Date: <strong>{formatDubaiDate(pendingSale.soldAt)}</strong></span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handlePrint}
+                    className="action-btn btn-outlined"
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', marginBottom: '0.6rem' }}
+                  >
+                    <Printer size={14} /> Print
+                  </button>
+                  <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => setSuccessModalOpen(false)}
+                      className="action-btn btn-outlined"
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+                    >
+                      <ArrowLeft size={14} /> Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleNativeShare}
+                      className="action-btn btn-brand-blue"
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+                    >
+                      <Share2 size={14} /> Share via...
+                    </button>
+                  </div>
 
                   {/* SMS section — only if SMS is enabled for this site */}
                   {smsEnabledForSite && (
