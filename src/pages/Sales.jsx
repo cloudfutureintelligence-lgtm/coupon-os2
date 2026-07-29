@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck, Gift, Lock, Printer, Share2, ArrowLeft } from 'lucide-react';
+import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck, Gift, Lock, Printer } from 'lucide-react';
 import { sendCouponSms, normalisePhone, isAllowedForProvider } from '../utils/smsService';
 import { SalesAnalyticsPanel } from '../components/SalesAnalyticsPanel';
 
@@ -37,13 +37,6 @@ const formatDubaiDateTime = (dateInput) => {
   });
 };
 
-// Small brand glyph (lucide-react has no WhatsApp mark)
-const WhatsAppIcon = ({ size = 14, color = '#fff' }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
-    <path d="M17.47 14.38c-.29-.15-1.71-.84-1.98-.94-.27-.1-.46-.15-.66.15-.2.29-.76.94-.93 1.13-.17.2-.34.22-.63.07-.29-.15-1.22-.45-2.32-1.43-.86-.76-1.44-1.71-1.61-2-.17-.29-.02-.45.13-.6.13-.13.29-.34.44-.51.15-.17.2-.29.29-.49.1-.2.05-.37-.02-.51-.07-.15-.66-1.59-.9-2.18-.24-.57-.48-.5-.66-.51h-.56c-.2 0-.51.07-.78.37-.27.29-1.02 1-1.02 2.43 0 1.43 1.04 2.82 1.19 3.01.15.2 2.05 3.13 4.96 4.39.69.3 1.23.48 1.65.61.69.22 1.32.19 1.82.11.55-.08 1.71-.7 1.95-1.37.24-.68.24-1.26.17-1.38-.07-.13-.27-.2-.56-.35z"/>
-    <path d="M12.02 2C6.5 2 2.02 6.48 2.02 12c0 1.87.5 3.62 1.4 5.13L2 22l4.99-1.31A9.95 9.95 0 0 0 12.02 22C17.54 22 22 17.52 22 12S17.54 2 12.02 2zm0 18.18c-1.7 0-3.29-.47-4.65-1.28l-.33-.2-3.34.88.89-3.25-.22-.34a8.15 8.15 0 0 1-1.27-4.39c0-4.52 3.68-8.19 8.2-8.19s8.19 3.67 8.19 8.19-3.67 8.19-8.19 8.19z"/>
-  </svg>
-);
 const todayStr  = () => toDateStr(new Date());
 
 const thisMonthStart = () => {
@@ -88,10 +81,6 @@ export const Sales = () => {
   const [smsSent, setSmsSent]         = useState(false);
   const [smsError, setSmsError]       = useState('');
   const [smsPhone, setSmsPhone]       = useState('');
-
-  // Share (WhatsApp / Telegram / other) state
-  const [waPromptOpen, setWaPromptOpen] = useState(false);
-  const [waNumber, setWaNumber]         = useState('');
 
   // Sales-log search (code, name, mobile)
   const [logSearch, setLogSearch] = useState('');
@@ -149,8 +138,6 @@ export const Sales = () => {
         setSmsPhone(custPhone || '');
         setSmsSent(false);
         setSmsError('');
-        setWaPromptOpen(false);
-        setWaNumber(custPhone || '');
         setSuccessModalOpen(true);
       }
     } catch (err) {
@@ -521,57 +508,13 @@ export const Sales = () => {
           const e164Preview = normalisePhone(smsPhone);
           const phoneValid  = e164Preview && isAllowedForProvider(e164Preview, db.settings?.smsProvider || 'twilio');
 
-          // ── Share via WhatsApp / Telegram / other apps ──────────────────
-          const shareMessage = () => {
-            const profileName = pendingSale
-              ? db.couponProfiles.find(p => p.id === pendingSale.profileId)?.name || ''
-              : '';
-            return `Your internet access code${profileName ? ` (${profileName})` : ''}: ${soldCouponCode}`;
-          };
-
-          const handleWhatsAppPick = () => {
-            // No number specified — WhatsApp opens and lets the user choose
-            // any saved contact themselves, with the code pre-filled.
-            window.open(`https://wa.me/?text=${encodeURIComponent(shareMessage())}`, '_blank');
-          };
-
-          const handleWhatsAppSend = () => {
-            const digits = waNumber.replace(/\D/g, '');
-            if (digits.length < 8) { showToast('Enter a valid WhatsApp number'); return; }
-            window.open(`https://wa.me/${digits}?text=${encodeURIComponent(shareMessage())}`, '_blank');
-          };
-
           // ── Print — renders only the #couponPrintSlip node via CSS, so it
           // works identically on desktop and mobile browsers (no popups,
-          // no new tabs — just the OS's native print/AirPrint sheet). ──────
+          // no new tabs — just the OS's native print/AirPrint sheet). The
+          // slip is styled as a small standalone card (not a stretched A4
+          // page) via the @page rule + fixed card width below. ────────────
           const handlePrint = () => {
             window.print();
-          };
-
-          // ── Universal "Share via…" — uses the device's native share sheet
-          // (WhatsApp, Telegram, SMS, Email, AirDrop, Notes, etc. — whatever
-          // is installed) with a clipboard-copy fallback for browsers/desktops
-          // that don't support the Web Share API. ─────────────────────────
-          const handleNativeShare = async () => {
-            const text = shareMessage();
-            if (navigator.share) {
-              try {
-                await navigator.share({ title: 'Internet Access Code', text });
-              } catch (err) {
-                if (err?.name !== 'AbortError') console.error(err);
-              }
-              return;
-            }
-            if (navigator.clipboard?.writeText) {
-              try {
-                await navigator.clipboard.writeText(text);
-                showToast('Code copied — paste it anywhere to share');
-                return;
-              } catch (err) {
-                console.error(err);
-              }
-            }
-            showToast('Sharing is not supported on this device');
           };
 
           const handleSendSms = async () => {
@@ -643,70 +586,65 @@ export const Sales = () => {
                     </div>
                   )}
 
-                  {/* Print / Back / Share-via-all action row.
-                      Works the same on desktop and mobile — printing renders
-                      only the hidden #couponPrintSlip node below (everything
-                      else is visibility:hidden during print), so it's just
-                      the browser/OS's native print (or AirPrint) sheet — no
-                      popups or new tabs that mobile browsers tend to block. */}
+                  {/* Print action — renders only the hidden #couponPrintSlip
+                      card below (everything else is visibility:hidden during
+                      print). The @page size is pinned to a small card, and
+                      the slip itself is styled as a standalone rounded card
+                      (not a full-width A4 sheet), matching the on-screen
+                      confirmation card exactly. */}
                   <style>{`
                     .coupon-print-slip { display: none; }
                     @media print {
+                      @page { size: 90mm 130mm; margin: 0; }
+                      html, body { margin: 0 !important; padding: 0 !important; }
                       body * { visibility: hidden !important; }
                       .coupon-print-slip, .coupon-print-slip * { visibility: visible !important; }
                       .coupon-print-slip {
-                        display: block !important;
-                        position: fixed; top: 0; left: 0; width: 100%;
-                        padding: 32px; box-sizing: border-box;
+                        display: flex !important;
+                        position: fixed; top: 0; left: 0;
+                        width: 90mm; height: 130mm;
+                        align-items: center; justify-content: center;
+                        background: #f2f2f2;
+                      }
+                      .coupon-print-slip .print-card {
+                        width: 78mm;
+                        background: #ffffff;
+                        border-radius: 14px;
+                        padding: 16px 14px;
+                        box-sizing: border-box;
                         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
                       }
                     }
                   `}</style>
                   <div id="couponPrintSlip" className="coupon-print-slip">
-                    <h2 style={{ textAlign: 'center', color: pendingSale?.isFree ? '#2563eb' : '#16a34a', margin: '0 0 6px', fontSize: '20px' }}>
-                      {pendingSale?.isFree ? '✓ Free Coupon Issued' : '✓ Sale Completed Successfully'}
-                    </h2>
-                    <p style={{ textAlign: 'center', fontSize: '13px', color: '#555', margin: '0 0 20px' }}>
-                      Share this code with the customer to activate their internet access:
-                    </p>
-                    <div style={{ border: `2px dashed ${pendingSale?.isFree ? '#2563eb' : '#16a34a'}`, borderRadius: '10px', padding: '20px', textAlign: 'center', marginBottom: '18px' }}>
-                      <span style={{ display: 'block', fontSize: '11px', letterSpacing: '.08em', textTransform: 'uppercase', color: '#888', marginBottom: '6px' }}>Access Code</span>
-                      <div style={{ fontSize: '32px', fontWeight: 800, letterSpacing: '2px', fontFamily: "'Courier New', monospace" }}>{soldCouponCode}</div>
-                    </div>
-                    {pendingSale && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#333', borderTop: '1px solid #ddd', paddingTop: '12px' }}>
-                        <span>Package: <strong>{db.couponProfiles.find(p => p.id === pendingSale.profileId)?.name || '—'}</strong></span>
-                        <span>Date: <strong>{formatDubaiDate(pendingSale.soldAt)}</strong></span>
+                    <div className="print-card">
+                      <h2 style={{ textAlign: 'center', color: pendingSale?.isFree ? '#2563eb' : '#16a34a', margin: '0 0 10px', fontSize: '17px', fontWeight: 800 }}>
+                        {pendingSale?.isFree ? '✓ Free Coupon Issued' : '✓ Sale Completed Successfully'}
+                      </h2>
+                      <p style={{ textAlign: 'center', fontSize: '11px', color: '#555', margin: '0 0 14px', lineHeight: 1.4 }}>
+                        Share this code with the customer to activate their internet access:
+                      </p>
+                      <div style={{ border: `2px dashed ${pendingSale?.isFree ? '#2563eb' : '#16a34a'}`, borderRadius: '10px', padding: '16px 10px', textAlign: 'center', marginBottom: '12px', background: '#f7f8fa' }}>
+                        <span style={{ display: 'block', fontSize: '9px', letterSpacing: '.08em', textTransform: 'uppercase', color: '#9aa0a6', marginBottom: '6px', fontWeight: 700 }}>Access Code</span>
+                        <div style={{ fontSize: '26px', fontWeight: 800, letterSpacing: '1px', fontFamily: "'Courier New', monospace", color: '#111' }}>{soldCouponCode}</div>
                       </div>
-                    )}
+                      {pendingSale && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#9aa0a6', background: '#f2f3f5', borderRadius: '8px', padding: '9px 12px' }}>
+                          <span>Package: <strong style={{ color: '#111' }}>{db.couponProfiles.find(p => p.id === pendingSale.profileId)?.name || '—'}</strong></span>
+                          <span>Date: <strong style={{ color: '#111' }}>{formatDubaiDate(pendingSale.soldAt)}</strong></span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <button
                     type="button"
                     onClick={handlePrint}
-                    className="action-btn btn-outlined"
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', marginBottom: '0.6rem' }}
+                    className="action-btn btn-brand-blue"
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', marginBottom: '1rem' }}
                   >
                     <Printer size={14} /> Print
                   </button>
-                  <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1rem' }}>
-                    <button
-                      type="button"
-                      onClick={() => setSuccessModalOpen(false)}
-                      className="action-btn btn-outlined"
-                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
-                    >
-                      <ArrowLeft size={14} /> Back
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleNativeShare}
-                      className="action-btn btn-brand-blue"
-                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
-                    >
-                      <Share2 size={14} /> Share via...
-                    </button>
-                  </div>
 
                   {/* SMS section — only if SMS is enabled for this site */}
                   {smsEnabledForSite && (
@@ -785,81 +723,8 @@ export const Sales = () => {
                   </div>
                   )}
 
-                  {/* Share section — WhatsApp */}
-                  <div style={{
-                    background: 'var(--surface-2)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius)',
-                    padding: '0.9rem 1rem',
-                    marginBottom: '1rem',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', marginBottom: '0.7rem' }}>
-                      <WhatsAppIcon size={14} color="var(--text-3)" />
-                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text)' }}>Share Code via WhatsApp</span>
-                    </div>
-
-                    {!waPromptOpen ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={handleWhatsAppPick}
-                          style={{
-                            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
-                            background: '#25D366', border: 'none', borderRadius: 'var(--radius)',
-                            padding: '0.6rem 0', cursor: 'pointer', color: '#fff', fontSize: '0.78rem', fontWeight: 600,
-                          }}
-                        >
-                          <WhatsAppIcon size={14} /> Share via WhatsApp
-                        </button>
-                        <p style={{ fontSize: '0.68rem', color: 'var(--text-3)', marginTop: '0.5rem', marginBottom: 0, textAlign: 'center' }}>
-                          Opens WhatsApp — pick any saved contact to send to.{' '}
-                          <span
-                            onClick={() => setWaPromptOpen(true)}
-                            style={{ color: 'var(--blue)', cursor: 'pointer', fontWeight: 600 }}
-                          >
-                            Send to a number instead
-                          </span>
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                          <input
-                            type="tel"
-                            className="text-input-field"
-                            placeholder="e.g. +971xxxxxxxx"
-                            value={waNumber}
-                            onChange={e => setWaNumber(e.target.value)}
-                            style={{ flex: 1, fontSize: '0.82rem' }}
-                            autoFocus
-                          />
-                          <button
-                            type="button"
-                            style={{
-                              whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.35rem',
-                              background: '#25D366', border: 'none', borderRadius: 'var(--radius)',
-                              padding: '0 0.9rem', cursor: 'pointer', color: '#fff', fontSize: '0.78rem', fontWeight: 600,
-                            }}
-                            onClick={handleWhatsAppSend}
-                          >
-                            <WhatsAppIcon size={13} /> Send
-                          </button>
-                        </div>
-                        <p style={{ fontSize: '0.68rem', color: 'var(--text-3)', marginTop: '0.35rem', marginBottom: 0 }}>
-                          Include country code, no spaces or symbols.{' '}
-                          <span
-                            onClick={() => setWaPromptOpen(false)}
-                            style={{ color: 'var(--blue)', cursor: 'pointer', fontWeight: 600 }}
-                          >
-                            Pick a contact instead
-                          </span>
-                        </p>
-                      </>
-                    )}
-                  </div>
-
-                  <button type="button" className="action-btn btn-brand-blue" style={{ width: '100%' }} onClick={() => setSuccessModalOpen(false)}>
-                    Close &amp; Continue
+                  <button type="button" className="action-btn btn-outlined" style={{ width: '100%' }} onClick={() => setSuccessModalOpen(false)}>
+                    Close
                   </button>
                 </div>
               </div>
