@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck, Gift, Lock, Printer, Share2 } from 'lucide-react';
+import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck, Gift, Lock, Share2 } from 'lucide-react';
 import { sendCouponSms, normalisePhone, isAllowedForProvider } from '../utils/smsService';
 import { SalesAnalyticsPanel } from '../components/SalesAnalyticsPanel';
 
@@ -513,15 +513,6 @@ export const Sales = () => {
           const e164Preview = normalisePhone(smsPhone);
           const phoneValid  = e164Preview && isAllowedForProvider(e164Preview, db.settings?.smsProvider || 'twilio');
 
-          // ── Print — renders only the #couponPrintSlip node via CSS, so it
-          // works identically on desktop and mobile browsers (no popups,
-          // no new tabs — just the OS's native print/AirPrint sheet). The
-          // slip is styled as a small standalone card (not a stretched A4
-          // page) via the @page rule + fixed card width below. ────────────
-          const handlePrint = () => {
-            window.print();
-          };
-
           // ── Share as Image — renders the off-screen #couponShareCard node
           // to a PNG with html2canvas, then hands it to the OS Share Sheet
           // (navigator.share with files) so it drops into WhatsApp etc. as
@@ -606,7 +597,6 @@ export const Sales = () => {
                     Share this code with the customer to activate their internet access:
                   </p>
                   <div style={{ background: 'var(--surface-2)', padding: '1.25rem', borderRadius: 'var(--radius)', border: `2px dashed ${pendingSale?.isFree ? 'var(--blue)' : 'var(--green)'}`, marginBottom: '1.25rem', textAlign: 'center' }}>
-                    <span style={{ display: 'block', fontSize: '0.68rem', fontWeight: 600, color: 'var(--text-3)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Access Code</span>
                     <strong className="td-monospaced" style={{ fontSize: '1.6rem', color: 'var(--text)', fontWeight: 800 }}>{soldCouponCode}</strong>
                     {pendingSale?.isFree && (
                       <span className="pill-badge badge-info" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.5rem' }}>
@@ -643,57 +633,6 @@ export const Sales = () => {
                     </div>
                   )}
 
-                  {/* Print action — renders only the hidden #couponPrintSlip
-                      card below (everything else is visibility:hidden during
-                      print). The @page size is pinned to a small card, and
-                      the slip itself is styled as a standalone rounded card
-                      (not a full-width A4 sheet), matching the on-screen
-                      confirmation card exactly. */}
-                  <style>{`
-                    .coupon-print-slip { display: none; }
-                    @media print {
-                      @page { size: 90mm 130mm; margin: 0; }
-                      html, body { margin: 0 !important; padding: 0 !important; }
-                      body * { visibility: hidden !important; }
-                      .coupon-print-slip, .coupon-print-slip * { visibility: visible !important; }
-                      .coupon-print-slip {
-                        display: flex !important;
-                        position: fixed; top: 0; left: 0;
-                        width: 90mm; height: 130mm;
-                        align-items: center; justify-content: center;
-                        background: #f2f2f2;
-                      }
-                      .coupon-print-slip .print-card {
-                        width: 78mm;
-                        background: #ffffff;
-                        border-radius: 14px;
-                        padding: 16px 14px;
-                        box-sizing: border-box;
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-                      }
-                    }
-                  `}</style>
-                  <div id="couponPrintSlip" className="coupon-print-slip">
-                    <div className="print-card">
-                      <h2 style={{ textAlign: 'center', color: pendingSale?.isFree ? '#2563eb' : '#16a34a', margin: '0 0 10px', fontSize: '17px', fontWeight: 800 }}>
-                        {pendingSale?.isFree ? '✓ Free Coupon Issued' : '✓ Sale Completed Successfully'}
-                      </h2>
-                      <p style={{ textAlign: 'center', fontSize: '11px', color: '#555', margin: '0 0 14px', lineHeight: 1.4 }}>
-                        Share this code with the customer to activate their internet access:
-                      </p>
-                      <div style={{ border: `2px dashed ${pendingSale?.isFree ? '#2563eb' : '#16a34a'}`, borderRadius: '10px', padding: '16px 10px', textAlign: 'center', marginBottom: '12px', background: '#f7f8fa' }}>
-                        <span style={{ display: 'block', fontSize: '9px', letterSpacing: '.08em', textTransform: 'uppercase', color: '#9aa0a6', marginBottom: '6px', fontWeight: 700 }}>Access Code</span>
-                        <div style={{ fontSize: '26px', fontWeight: 800, letterSpacing: '1px', fontFamily: "'Courier New', monospace", color: '#111' }}>{soldCouponCode}</div>
-                      </div>
-                      {pendingSale && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10.5px', color: '#9aa0a6', background: '#f2f3f5', borderRadius: '8px', padding: '9px 12px' }}>
-                          <span>Package: <strong style={{ color: '#111' }}>{db.couponProfiles.find(p => p.id === pendingSale.profileId)?.name || '—'}</strong></span>
-                          <span>Date: <strong style={{ color: '#111' }}>{formatDubaiDate(pendingSale.soldAt)}</strong></span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
                   {/* Off-screen card used only as the html2canvas capture
                       source for "Share as Image" — kept out of the visible
                       layout (fixed + pushed off the top of the viewport)
@@ -723,7 +662,6 @@ export const Sales = () => {
                         Share this code with the customer to activate their internet access:
                       </p>
                       <div style={{ border: `2px dashed ${pendingSale?.isFree ? '#2563eb' : '#16a34a'}`, borderRadius: '10px', padding: '18px 10px', textAlign: 'center', marginBottom: '14px', background: '#f7f8fa' }}>
-                        <span style={{ display: 'block', fontSize: '10px', letterSpacing: '.08em', textTransform: 'uppercase', color: '#9aa0a6', marginBottom: '8px', fontWeight: 700 }}>Access Code</span>
                         <div style={{ fontSize: '30px', fontWeight: 800, letterSpacing: '1px', fontFamily: "'Courier New', monospace", color: '#111' }}>{soldCouponCode}</div>
                       </div>
                       {pendingSale && (
@@ -735,27 +673,17 @@ export const Sales = () => {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '0.6rem', marginBottom: shareImageError ? '0.4rem' : '1rem' }}>
-                    <button
-                      type="button"
-                      onClick={handlePrint}
-                      className="action-btn btn-outlined"
-                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
-                    >
-                      <Printer size={14} /> Print
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleShareImage}
-                      disabled={isSharingImage}
-                      className="action-btn btn-brand-blue"
-                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
-                    >
-                      {isSharingImage
-                        ? <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Preparing…</>
-                        : <><Share2 size={14} /> Share as Image</>}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleShareImage}
+                    disabled={isSharingImage}
+                    className="action-btn btn-brand-blue"
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', marginBottom: shareImageError ? '0.4rem' : '1rem' }}
+                  >
+                    {isSharingImage
+                      ? <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Preparing…</>
+                      : <><Share2 size={14} /> Share as Image</>}
+                  </button>
                   {shareImageError && (
                     <p style={{ fontSize: '0.7rem', color: 'var(--red)', marginBottom: '1rem' }}>{shareImageError}</p>
                   )}
