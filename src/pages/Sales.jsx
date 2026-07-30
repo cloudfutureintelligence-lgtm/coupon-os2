@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck, Gift, Lock, Printer } from 'lucide-react';
+import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck, Gift, Lock, Printer, Share2 } from 'lucide-react';
 import { sendCouponSms, normalisePhone, isAllowedForProvider } from '../utils/smsService';
 import { SalesAnalyticsPanel } from '../components/SalesAnalyticsPanel';
 
@@ -81,6 +81,11 @@ export const Sales = () => {
   const [smsSent, setSmsSent]         = useState(false);
   const [smsError, setSmsError]       = useState('');
   const [smsPhone, setSmsPhone]       = useState('');
+
+  // Share-as-image state (WhatsApp / native share of the coupon card)
+  const shareCardRef = useRef(null);
+  const [isSharingImage, setIsSharingImage] = useState(false);
+  const [shareImageError, setShareImageError] = useState('');
 
   // Sales-log search (code, name, mobile)
   const [logSearch, setLogSearch] = useState('');
@@ -517,6 +522,58 @@ export const Sales = () => {
             window.print();
           };
 
+          // ── Share as Image — renders the off-screen #couponShareCard node
+          // to a PNG with html2canvas, then hands it to the OS Share Sheet
+          // (navigator.share with files) so it drops into WhatsApp etc. as
+          // a clean photo instead of a full printed PDF page. Falls back to
+          // downloading the PNG on browsers without file-sharing support. ──
+          const handleShareImage = async () => {
+            if (!shareCardRef.current || isSharingImage) return;
+            setIsSharingImage(true);
+            setShareImageError('');
+            try {
+              const { default: html2canvas } = await import('html2canvas');
+              const canvas = await html2canvas(shareCardRef.current, {
+                backgroundColor: '#ffffff',
+                scale: 3, // sharp on retina / high-DPI phone screens
+                useCORS: true,
+              });
+              const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+              if (!blob) throw new Error('Could not generate image');
+
+              const fileName = `coupon-${soldCouponCode || 'code'}.png`;
+              const file = new File([blob], fileName, { type: 'image/png' });
+
+              if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                await navigator.share({
+                  files: [file],
+                  title: 'Coupon Code',
+                  text: `Access Code: ${soldCouponCode}`,
+                });
+              } else {
+                // Fallback: trigger a plain download for browsers/devices
+                // without native file-sharing (e.g. desktop Safari/Chrome).
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+              }
+            } catch (err) {
+              // AbortError fires when the user just cancels the native share
+              // sheet — that's not a real failure, so stay quiet about it.
+              if (err?.name !== 'AbortError') {
+                console.error(err);
+                setShareImageError('Could not share image. Please try again.');
+              }
+            } finally {
+              setIsSharingImage(false);
+            }
+          };
+
           const handleSendSms = async () => {
             if (!phoneValid || smsSending || smsSent) return;
             setSmsSending(true);
@@ -637,14 +694,71 @@ export const Sales = () => {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handlePrint}
-                    className="action-btn btn-brand-blue"
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', marginBottom: '1rem' }}
+                  {/* Off-screen card used only as the html2canvas capture
+                      source for "Share as Image" — kept out of the visible
+                      layout (fixed + pushed off the top of the viewport)
+                      rather than display:none, since html2canvas cannot
+                      render elements that aren't actually laid out. Markup
+                      mirrors the print card above so the shared image and
+                      the printed slip look identical. */}
+                  <div
+                    style={{ position: 'fixed', top: '-9999px', left: 0, pointerEvents: 'none' }}
+                    aria-hidden="true"
                   >
-                    <Printer size={14} /> Print
-                  </button>
+                    <div
+                      ref={shareCardRef}
+                      style={{
+                        width: '360px',
+                        background: '#ffffff',
+                        borderRadius: '14px',
+                        padding: '20px 18px',
+                        boxSizing: 'border-box',
+                        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif",
+                      }}
+                    >
+                      <h2 style={{ textAlign: 'center', color: pendingSale?.isFree ? '#2563eb' : '#16a34a', margin: '0 0 10px', fontSize: '19px', fontWeight: 800 }}>
+                        {pendingSale?.isFree ? '✓ Free Coupon Issued' : '✓ Sale Completed Successfully'}
+                      </h2>
+                      <p style={{ textAlign: 'center', fontSize: '13px', color: '#555', margin: '0 0 16px', lineHeight: 1.4 }}>
+                        Share this code with the customer to activate their internet access:
+                      </p>
+                      <div style={{ border: `2px dashed ${pendingSale?.isFree ? '#2563eb' : '#16a34a'}`, borderRadius: '10px', padding: '18px 10px', textAlign: 'center', marginBottom: '14px', background: '#f7f8fa' }}>
+                        <span style={{ display: 'block', fontSize: '10px', letterSpacing: '.08em', textTransform: 'uppercase', color: '#9aa0a6', marginBottom: '8px', fontWeight: 700 }}>Access Code</span>
+                        <div style={{ fontSize: '30px', fontWeight: 800, letterSpacing: '1px', fontFamily: "'Courier New', monospace", color: '#111' }}>{soldCouponCode}</div>
+                      </div>
+                      {pendingSale && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#9aa0a6', background: '#f2f3f5', borderRadius: '8px', padding: '10px 13px' }}>
+                          <span>Package: <strong style={{ color: '#111' }}>{db.couponProfiles.find(p => p.id === pendingSale.profileId)?.name || '—'}</strong></span>
+                          <span>Date: <strong style={{ color: '#111' }}>{formatDubaiDate(pendingSale.soldAt)}</strong></span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.6rem', marginBottom: shareImageError ? '0.4rem' : '1rem' }}>
+                    <button
+                      type="button"
+                      onClick={handlePrint}
+                      className="action-btn btn-outlined"
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+                    >
+                      <Printer size={14} /> Print
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleShareImage}
+                      disabled={isSharingImage}
+                      className="action-btn btn-brand-blue"
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+                    >
+                      {isSharingImage
+                        ? <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Preparing…</>
+                        : <><Share2 size={14} /> Share as Image</>}
+                    </button>
+                  </div>
+                  {shareImageError && (
+                    <p style={{ fontSize: '0.7rem', color: 'var(--red)', marginBottom: '1rem' }}>{shareImageError}</p>
+                  )}
 
                   {/* SMS section — only if SMS is enabled for this site */}
                   {smsEnabledForSite && (
