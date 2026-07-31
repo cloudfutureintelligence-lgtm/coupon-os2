@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { BarChart2, Calendar, Download, Printer, Filter, Gift } from 'lucide-react';
+import { BarChart2, Calendar, Download, Printer, Filter, Gift, ChevronDown, Check } from 'lucide-react';
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 // All dates are normalized to Asia/Dubai (UTC+4), regardless of the viewer's own
@@ -61,7 +61,25 @@ const formatDubaiDateTime = (isoStr) => {
  *   showTransactions — if false, hide the full transaction detail table (default true)
  */
 export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = true }) => {
-  const { db, currentUser, showToast, selectedSiteId, setSelectedSiteId } = useApp();
+  const { db, currentUser, showToast } = useApp();
+
+  // Site filter now supports selecting several sites at once (in addition to
+  // "All Sites" or a single site). 'all' is a sentinel meaning every visible
+  // site — it's mutually exclusive with picking individual site ids.
+  const [selectedSiteIds, setSelectedSiteIds] = useState(['all']);
+  const [siteDropdownOpen, setSiteDropdownOpen] = useState(false);
+  const siteDropdownRef = useRef(null);
+
+  useEffect(() => {
+    if (!siteDropdownOpen) return;
+    const handleClickOutside = (e) => {
+      if (siteDropdownRef.current && !siteDropdownRef.current.contains(e.target)) {
+        setSiteDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [siteDropdownOpen]);
 
   const [dateMode, setDateMode]     = useState('today');
   const [customFrom, setCustomFrom] = useState(todayStr());
@@ -121,9 +139,9 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
     : db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
 
   // Apply site filter
-  const filteredSiteIds = selectedSiteId === 'all'
+  const filteredSiteIds = selectedSiteIds.includes('all')
     ? visibleSiteIds
-    : visibleSiteIds.filter(id => id === selectedSiteId);
+    : visibleSiteIds.filter(id => selectedSiteIds.includes(id));
 
   // Build per-site stats
   const siteStats = filteredSiteIds.map(siteId => {
@@ -273,6 +291,26 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
   // Visible sites for filter dropdown (only those the user can access)
   const visibleSites = db.sites.filter(s => visibleSiteIds.includes(s.id));
 
+  // Toggle a single site in/out of the multi-select. Picking every site
+  // individually collapses back to the 'all' sentinel; deselecting the last
+  // one falls back to 'all' too (never leaves the filter empty).
+  const toggleSite = (siteId) => {
+    setSelectedSiteIds(prev => {
+      const withoutAll = prev.includes('all') ? [] : prev;
+      const next = withoutAll.includes(siteId)
+        ? withoutAll.filter(id => id !== siteId)
+        : [...withoutAll, siteId];
+      if (next.length === 0 || next.length === visibleSites.length) return ['all'];
+      return next;
+    });
+  };
+
+  const siteFilterLabel = selectedSiteIds.includes('all')
+    ? 'All Sites'
+    : selectedSiteIds.length === 1
+      ? (visibleSites.find(s => s.id === selectedSiteIds[0])?.name || '1 Site')
+      : `${selectedSiteIds.length} Sites`;
+
   return (
     <>
       {/* ── Header card with date controls + site filter + export/print ── */}
@@ -308,29 +346,73 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
             {/* Divider */}
             <div style={{ width: '1px', height: '20px', background: 'var(--border)', margin: '0 0.15rem' }} />
 
-            {/* Site Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-              <Filter size={12} style={{ color: 'var(--text-3)' }} />
-              <select
-                value={selectedSiteId}
-                onChange={e => setSelectedSiteId(e.target.value)}
+            {/* Site Filter (multi-select) */}
+            <div ref={siteDropdownRef} style={{ position: 'relative' }}>
+              <button
+                onClick={() => setSiteDropdownOpen(o => !o)}
                 style={{
+                  display: 'flex', alignItems: 'center', gap: '0.35rem',
                   fontSize: '0.72rem',
                   padding: '0.22rem 0.5rem',
                   borderRadius: '4px',
                   border: '1px solid var(--border)',
-                  background: selectedSiteId !== 'all' ? 'var(--blue)' : 'var(--surface-2)',
-                  color: selectedSiteId !== 'all' ? '#fff' : 'var(--text-2)',
+                  background: !selectedSiteIds.includes('all') ? 'var(--blue)' : 'var(--surface-2)',
+                  color: !selectedSiteIds.includes('all') ? '#fff' : 'var(--text-2)',
                   cursor: 'pointer',
-                  fontWeight: selectedSiteId !== 'all' ? 700 : 400,
-                  outline: 'none',
+                  fontWeight: !selectedSiteIds.includes('all') ? 700 : 400,
                 }}
               >
-                <option value="all">All Sites</option>
-                {visibleSites.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+                <Filter size={12} />
+                {siteFilterLabel}
+                <ChevronDown size={12} />
+              </button>
+
+              {siteDropdownOpen && (
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 20,
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: '6px', boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+                  minWidth: '210px', maxHeight: '280px', overflowY: 'auto', padding: '0.35rem',
+                }}>
+                  <div
+                    onClick={() => { setSelectedSiteIds(['all']); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.5rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700 }}
+                  >
+                    <span style={{
+                      width: 14, height: 14, borderRadius: '3px', flexShrink: 0,
+                      border: `1px solid ${selectedSiteIds.includes('all') ? 'var(--blue)' : 'var(--border)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: selectedSiteIds.includes('all') ? 'var(--blue)' : 'transparent',
+                    }}>
+                      {selectedSiteIds.includes('all') && <Check size={10} color="#fff" />}
+                    </span>
+                    All Sites
+                  </div>
+
+                  <div style={{ height: '1px', background: 'var(--border)', margin: '0.3rem 0' }} />
+
+                  {visibleSites.map(s => {
+                    const checked = selectedSiteIds.includes(s.id);
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => toggleSite(s.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.5rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.78rem' }}
+                      >
+                        <span style={{
+                          width: 14, height: 14, borderRadius: '3px', flexShrink: 0,
+                          border: `1px solid ${checked ? 'var(--blue)' : 'var(--border)'}`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: checked ? 'var(--blue)' : 'transparent',
+                        }}>
+                          {checked && <Check size={10} color="#fff" />}
+                        </span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Divider */}
@@ -444,7 +526,7 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
                 </thead>
                 <tbody>
                   {revenueBySite.map(s => (
-                    <tr key={s.siteId} style={{ background: selectedSiteId === s.siteId ? 'var(--surface-2)' : 'transparent' }}>
+                    <tr key={s.siteId} style={{ background: selectedSiteIds.includes(s.siteId) ? 'var(--surface-2)' : 'transparent' }}>
                       <td style={tableCellStyle}>
                         <span style={{ fontWeight: 700 }}>{s.site?.name || s.siteId}</span>
                         {s.site?.location && (
