@@ -1,16 +1,26 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { BarChart2, Calendar, Download, Printer, Filter } from 'lucide-react';
+import { dubaiDateStr as toDateStr, dubaiStartOfDay, dubaiEndOfDay, formatDubaiDateTime } from '../utils/dateUtils';
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
-const toDateStr = (d) => d.toISOString().slice(0, 10);
+// Date/time formatting is centralized in ../utils/dateUtils (Dubai/GST-locked,
+// regardless of the viewer's device timezone). Don't re-declare local
+// toDateStr / todayStr / etc. copies here — a previous local copy of these
+// helpers (built on raw `.toISOString()`, which is UTC) is what caused
+// "today" to resolve to the wrong calendar day and drop sales near the
+// UTC/Dubai day boundary.
 const todayStr       = () => toDateStr(new Date());
-const thisMonthStart = () => { const d = new Date(); d.setDate(1); return toDateStr(d); };
+const thisMonthStart = () => {
+  const [y, m] = todayStr().split('-');
+  return `${y}-${m}-01`;
+};
 const isInRange = (isoStr, from, to) => {
   if (!isoStr) return false;
-  const d = isoStr.slice(0, 10);
-  if (from && d < from) return false;
-  if (to   && d > to  ) return false;
+  const t = new Date(isoStr).getTime();
+  if (Number.isNaN(t)) return false;
+  if (from && t < dubaiStartOfDay(from).getTime()) return false;
+  if (to   && t > dubaiEndOfDay(to).getTime())     return false;
   return true;
 };
 
@@ -131,7 +141,7 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
         const site = db.sites.find(s => s.id === c.siteId)?.name || c.siteId;
         const user = db.users.find(u => u.id === c.soldByUserId)?.name || c.soldByUserId;
         const profit = (c.salePrice || 0) - (c.cost || 0);
-        return [c.code, prof, site, user, c.salePrice, c.cost, profit, new Date(c.soldAt).toLocaleString()];
+        return [c.code, prof, site, user, c.salePrice, c.cost, profit, formatDubaiDateTime(c.soldAt)];
       }),
     ];
 
@@ -598,7 +608,7 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
                         <td style={{ fontWeight: 600, color: 'var(--green)' }}>{c.salePrice} AED</td>
                         <td>{c.cost} AED</td>
                         <td style={{ fontWeight: 600, color: profit >= 0 ? 'var(--green)' : 'var(--red)' }}>{profit} AED</td>
-                        <td style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>{new Date(c.soldAt).toLocaleString()}</td>
+                        <td style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>{formatDubaiDateTime(c.soldAt)}</td>
                       </tr>
                     );
                   })}
