@@ -1,136 +1,86 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// dateUtils.js — single source of truth for date/time handling.
+// dateUtils.js — single source of truth for date/time formatting.
 //
-// The business runs on Dubai (Asia/Dubai, UTC+4) time.
+// The business runs on Dubai (Asia/Dubai, UTC+4) time. Coupons can be sold
+// from devices anywhere, and the app is viewed from browsers set to all sorts
+// of timezones — so every date/time shown in the UI is explicitly converted
+// to Asia/Dubai here, instead of trusting the viewer's device clock/timezone.
 //
-// STRATEGY (changed):
-//   - When we SAVE "now" (dubaiNowISOString), we compute the actual current
-//     Dubai wall-clock time and bake it into the string as
-//     "YYYY-MM-DDTHH:mm:ss.000+04:00". That string IS the real Dubai date/time
-//     at the moment it was saved — no ambiguity, no relying on the DB column
-//     or the viewer's clock.
-//   - When we DISPLAY a stored date, we do NOT run it back through a
-//     timezone-converting formatter (no `toLocaleString(..., { timeZone })`,
-//     no `Intl.DateTimeFormat` re-interpretation). We just read the literal
-//     Y/M/D/H/M characters straight out of the stored string and print them.
-//     Whatever date/time is sitting in the DB is what gets shown, full stop.
+// IMPORTANT — about the "+00" you see in raw SQL:
+//   The DB columns (sold_at, timestamp, created_at, etc.) are Postgres
+//   `timestamptz`. That type ALWAYS stores/represents the value internally
+//   as UTC and shows it with a "+00" suffix when queried with a plain
+//   client session — that is expected, correct, and NOT a bug. The instant
+//   stored is exactly right; it just needs converting to Dubai time for a
+//   human to read it, which is what the formatters below do.
 //
-// This avoids the double-conversion bug where a value already correct for
-// Dubai gets silently shifted again depending on the viewer's device
-// timezone or the JS engine's Date parsing quirks.
+//   Example: `2026-07-31 22:09:46+00` in the DB is the SAME MOMENT as
+//   `2026-08-01 02:09:46` in Dubai (UTC+4). Both are correct — one is the
+//   raw stored instant, the other is the human-readable Dubai time.
 //
 // Every page must import its date helpers from here. Don't re-declare local
 // toDateStr / formatDubaiDateTime / etc. copies in individual files — that's
 // how the inconsistency happened in the first place.
+//
+// `dubaiNowISOString()` is what client-side code should use whenever it
+// needs to stamp "now" before sending it to the database — it returns a
+// real UTC instant (via `new Date().toISOString()`), which Postgres will
+// correctly normalize on insert. Do NOT try to bake a "+04:00" offset into
+// this value or strip timezone info — `timestamptz` columns need a real,
+// unambiguous instant, and Postgres/JS both handle the UTC conversion for
+// you automatically and correctly.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const DUBAI_TZ = 'Asia/Dubai';
-const DUBAI_OFFSET = '+04:00';
 
-const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-// Pull the literal Y/M/D/H/M/S characters out of a stored date string,
-// WITHOUT letting the JS engine reinterpret them through any timezone.
-// Works for "YYYY-MM-DDTHH:mm:ss(.sss)?(Z|+04:00|...)?" style strings.
-// Falls back to reading from a Date object (using UTC getters, which just
-// read the raw fields) if the input isn't already a recognizable string.
-const extractParts = (dateInput) => {
-  if (!dateInput) return null;
-
-  if (typeof dateInput === 'string') {
-    const m = dateInput.match(
-      /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/
-    );
-    if (m) {
-      return {
-        year: m[1],
-        month: m[2],
-        day: m[3],
-        hour: m[4],
-        minute: m[5],
-        second: m[6] || '00',
-      };
-    }
-  }
-
-  // Fallback: treat whatever we were given as already representing the
-  // moment we want to show, and read its fields without conversion.
-  const d = new Date(dateInput);
-  if (isNaN(d.getTime())) return null;
-  return {
-    year: String(d.getUTCFullYear()),
-    month: String(d.getUTCMonth() + 1).padStart(2, '0'),
-    day: String(d.getUTCDate()).padStart(2, '0'),
-    hour: String(d.getUTCHours()).padStart(2, '0'),
-    minute: String(d.getUTCMinutes()).padStart(2, '0'),
-    second: String(d.getUTCSeconds()).padStart(2, '0'),
-  };
-};
-
-// "YYYY-MM-DD" — the literal date portion of the stored value, unconverted.
+// "YYYY-MM-DD" for a given moment, as that date is in Dubai — not UTC, not
+// the viewer's local device timezone. Used for "today" comparisons/filters.
 export const dubaiDateStr = (dateInput) => {
-  const p = extractParts(dateInput);
-  if (!p) return '';
-  return `${p.year}-${p.month}-${p.day}`;
+  if (!dateInput) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: DUBAI_TZ }).format(new Date(dateInput));
 };
 
-// Today's date string, in real current Dubai time (used only for "today"
-// comparisons — this one intentionally reads the live clock, not a stored value).
-export const todayDubaiStr = () => dubaiDateStr(dubaiNowISOString());
+// Today's date string, in Dubai time.
+export const todayDubaiStr = () => dubaiDateStr(new Date());
 
-// "YYYY-MM" — used to bucket sales/charts by month, straight from the stored value.
+// "YYYY-MM" for a given moment, in Dubai time — used to bucket sales/charts
+// by month without drifting near month boundaries depending on viewer tz.
 export const dubaiMonthKey = (dateInput) => dubaiDateStr(dateInput).slice(0, 7);
 
-// Date-only display, e.g. "23 Jul 2026" — literal characters from the stored value.
+// Date-only display, e.g. "23 Jul 2026" — always Dubai's calendar date.
 export const formatDubaiDate = (dateInput) => {
-  const p = extractParts(dateInput);
-  if (!p) return '—';
-  const monthName = MONTH_ABBR[parseInt(p.month, 10) - 1];
-  return `${p.day} ${monthName} ${p.year}`;
+  if (!dateInput) return '—';
+  return new Date(dateInput).toLocaleDateString('en-GB', {
+    timeZone: DUBAI_TZ, day: '2-digit', month: 'short', year: 'numeric',
+  });
 };
 
-// Time-only display, e.g. "01:09 am" — literal characters from the stored value.
+// Time-only display, e.g. "01:09 am" — always Dubai time.
 export const formatDubaiTime = (dateInput) => {
-  const p = extractParts(dateInput);
-  if (!p) return '—';
-  let h = parseInt(p.hour, 10);
-  const suffix = h >= 12 ? 'pm' : 'am';
-  h = h % 12;
-  if (h === 0) h = 12;
-  return `${String(h).padStart(2, '0')}:${p.minute} ${suffix}`;
+  if (!dateInput) return '—';
+  return new Date(dateInput).toLocaleTimeString('en-GB', {
+    timeZone: DUBAI_TZ, hour: '2-digit', minute: '2-digit', hour12: true,
+  });
 };
 
-// Date + time display, e.g. "01 Aug 2026, 01:09 am" — literal, unconverted.
+// Date + time display, e.g. "01 Aug 2026, 01:09 am" — always Dubai time.
 export const formatDubaiDateTime = (dateInput) => {
-  const p = extractParts(dateInput);
-  if (!p) return '—';
-  return `${formatDubaiDate(dateInput)}, ${formatDubaiTime(dateInput)}`;
+  if (!dateInput) return '—';
+  return new Date(dateInput).toLocaleString('en-GB', {
+    timeZone: DUBAI_TZ, day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
 };
 
 // Start-of-day / end-of-day for a "YYYY-MM-DD" string, anchored to Dubai's
-// midnight. Useful for date-range filters against timestamptz columns.
-export const dubaiStartOfDay = (dateStr) => new Date(`${dateStr}T00:00:00.000${DUBAI_OFFSET}`);
-export const dubaiEndOfDay = (dateStr) => new Date(`${dateStr}T23:59:59.999${DUBAI_OFFSET}`);
+// midnight (not UTC midnight). Useful for date-range filters against
+// timestamptz columns.
+export const dubaiStartOfDay = (dateStr) => new Date(`${dateStr}T00:00:00.000+04:00`);
+export const dubaiEndOfDay = (dateStr) => new Date(`${dateStr}T23:59:59.999+04:00`);
 
-// The current instant, captured as the ACTUAL current Dubai wall-clock time
-// and baked into the string with an explicit +04:00 offset — e.g.
-// "2026-08-01T14:32:07.000+04:00". This is what every "created at / sold at /
-// collected at" field should be stamped with before saving. Because the
-// Dubai time is embedded directly in the string, no later conversion is
-// needed (or wanted) when displaying it — the formatters above just read it back.
-export const dubaiNowISOString = () => {
-  const now = new Date();
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: DUBAI_TZ,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false,
-  }).formatToParts(now);
-
-  const map = {};
-  parts.forEach(({ type, value }) => { map[type] = value; });
-  // Intl can give "24" for midnight hour in some environments — normalize.
-  if (map.hour === '24') map.hour = '00';
-
-  return `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}:${map.second}.000${DUBAI_OFFSET}`;
-};
+// The current instant, as an ISO-8601 string, for stamping "created at /
+// sold at / collected at" fields before saving. Storing this in a
+// `timestamptz` column is always correct — Postgres keeps it as UTC
+// internally and every formatter above converts it back to Dubai time on
+// display, so nothing needs manual timezone math before it's saved.
+export const dubaiNowISOString = () => new Date().toISOString();
