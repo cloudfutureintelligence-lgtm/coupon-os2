@@ -1,15 +1,21 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Building2, Plus, MapPin, Users, CheckCircle2, UserPlus, Trash2, Layers, MessageSquare, CalendarClock, RotateCcw, Lock } from 'lucide-react';
+import { DUBAI_TZ, formatDubaiDateTime } from '../utils/dateUtils';
 
 const RESET_PASSWORD = '9495471187';
 
-// datetime-local inputs need "YYYY-MM-DDTHH:mm" in LOCAL time
+// datetime-local inputs need "YYYY-MM-DDTHH:mm" — rendered here as Dubai wall
+// time (not the admin's own device timezone), so "expires 11:59pm" always
+// means 11:59pm Dubai time, no matter where the admin is logged in from.
 const toDatetimeLocalValue = (iso) => {
   if (!iso) return '';
-  const d = new Date(iso);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: DUBAI_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(new Date(iso));
+  const get = (type) => parts.find(p => p.type === type)?.value;
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
 };
 
 export const Sites = () => {
@@ -88,7 +94,10 @@ export const Sites = () => {
   const handleSaveSubscription = async (siteId) => {
     const val = subExpiryRefs.current[siteId]?.value;
     if (!val) { showToast('Pick a date & time first'); return; }
-    await updateSiteSubscription(siteId, new Date(val).toISOString());
+    // `val` is "YYYY-MM-DDTHH:mm" in Dubai wall time (see toDatetimeLocalValue
+    // above) — tag it with Dubai's +04:00 offset so it converts to the right
+    // UTC instant, instead of being misread as the admin's own device timezone.
+    await updateSiteSubscription(siteId, new Date(`${val}:00+04:00`).toISOString());
   };
 
   const handleRenewOneMonth = async (site) => {
@@ -264,7 +273,7 @@ export const Sites = () => {
                 {/* Subscription status banner — shown to everyone when expired */}
                 {!isSiteActive(site) && (
                   <div style={{ background: 'var(--red-light)', border: '1px solid var(--red)', borderRadius: 'var(--radius)', padding: '0.55rem 0.75rem', marginBottom: '0.75rem', fontSize: '0.78rem', color: 'var(--red)', fontWeight: 600 }}>
-                    Subscription expired on {new Date(site.subscriptionExpiry).toLocaleString()} — coupon sales & stock imports are paused.
+                    Subscription expired on {formatDubaiDateTime(site.subscriptionExpiry)} — coupon sales & stock imports are paused.
                   </div>
                 )}
 
@@ -279,7 +288,7 @@ export const Sites = () => {
                         </span>
                       </div>
                       <span style={{ fontSize: '0.74rem', fontWeight: 700, color: isSiteActive(site) ? 'var(--text)' : 'var(--red)' }}>
-                        {site.subscriptionExpiry ? new Date(site.subscriptionExpiry).toLocaleString() : 'Lifetime access'}
+                        {site.subscriptionExpiry ? formatDubaiDateTime(site.subscriptionExpiry) : 'Lifetime access'}
                       </span>
                     </div>
                     <div className="flex-align-items-center" style={{ gap: '0.4rem', flexWrap: 'wrap' }}>

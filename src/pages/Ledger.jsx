@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { BookOpen, Search, Filter, RotateCcw, AlertTriangle } from 'lucide-react';
+import { formatDubaiDateTime } from '../utils/dateUtils';
 
 export const Ledger = () => {
   const { db, currentUser, reverseTransaction, showToast } = useApp();
@@ -188,7 +189,7 @@ export const Ledger = () => {
                       </span>
                     </td>
                     <td className="td-monospaced" style={{ fontSize: '0.75rem' }}>
-                      {new Date(tx.timestamp).toLocaleString()}
+                      {formatDubaiDateTime(tx.timestamp)}
                     </td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text)' }}>
                       {tx.remarks} {wasReversed && <span style={{ color: 'var(--red)', fontWeight: 700 }}>(REVERSED)</span>}

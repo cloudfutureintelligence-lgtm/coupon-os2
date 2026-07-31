@@ -1,17 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { BarChart2, Calendar, Download, Printer, Filter, Gift, ChevronDown, Check } from 'lucide-react';
+import { dubaiDateStr as toDateStr, dubaiStartOfDay, dubaiEndOfDay, formatDubaiDateTime } from '../utils/dateUtils';
 
-// ── Date helpers ──────────────────────────────────────────────────────────────
-// All dates are normalized to Asia/Dubai (UTC+4), regardless of the viewer's own
-// location/timezone (staff may be in UAE, KSA, or Qatar). This keeps "today" and
-// the business-day boundary consistent for everyone, and matches Dubai midnight
-// rather than each user's local midnight or the server's UTC midnight.
-const DUBAI_TZ = 'Asia/Dubai';
-const toDateStr = (d) => {
-  // en-CA locale formats as YYYY-MM-DD, which is what we want for string comparisons
-  return new Intl.DateTimeFormat('en-CA', { timeZone: DUBAI_TZ }).format(d);
-};
+// Date/time formatting is centralized in ../utils/dateUtils (Dubai/GST-locked,
+// regardless of the viewer's own location/timezone — staff may be in UAE, KSA,
+// or Qatar). This keeps "today" and the business-day boundary consistent for
+// everyone, matching Dubai midnight rather than each user's local midnight or
+// the server's UTC midnight. Don't re-declare date helpers here.
 const todayStr       = () => toDateStr(new Date());
 const thisMonthStart = () => {
   // Get today's Dubai date, then zero out the day-of-month
@@ -26,13 +22,6 @@ const thisMonthEnd = () => {
   const lastDay = new Date(y, m, 0).getDate();
   return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 };
-// Asia/Dubai has a fixed UTC+4 offset year-round (no DST), so we can build an exact
-// instant for the start/end of a given Dubai calendar date just by appending the
-// offset. This gives us real timestamp boundaries — 00:00:00.000 through
-// 23:59:59.999 Dubai time — instead of comparing YYYY-MM-DD strings, so a sale at
-// e.g. 23:58 Dubai time is correctly included right up to the last millisecond.
-const dubaiStartOfDay = (dateStr) => new Date(`${dateStr}T00:00:00.000+04:00`);
-const dubaiEndOfDay   = (dateStr) => new Date(`${dateStr}T23:59:59.999+04:00`);
 
 const isInRange = (isoStr, from, to) => {
   if (!isoStr) return false;
@@ -41,16 +30,6 @@ const isInRange = (isoStr, from, to) => {
   if (from && t < dubaiStartOfDay(from).getTime()) return false;
   if (to   && t > dubaiEndOfDay(to).getTime())     return false;
   return true;
-};
-// Format a sale timestamp in Dubai time (not the viewer's local browser time), so a
-// transaction shows the same date/time whether viewed from Dubai, KSA, or Qatar.
-const formatDubaiDateTime = (isoStr) => {
-  if (!isoStr) return '—';
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: DUBAI_TZ,
-    year: 'numeric', month: 'short', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hour12: true,
-  }).format(new Date(isoStr));
 };
 
 /**

@@ -15,14 +15,14 @@ import {
   User,
   BookOpen
 } from 'lucide-react';
+import { dubaiDateStr as toDubaiDateStr, dubaiMonthKey, formatDubaiTime } from '../utils/dateUtils';
 
 // All coupons are sold across UAE/KSA/Qatar sites but the business day boundary
 // is Dubai midnight. Comparing with the viewer's own device/browser timezone
 // (as toDateString() does) misclassifies sales made near midnight depending on
 // where the staff member happens to be logged in from — so every "today"
-// comparison below is anchored to Asia/Dubai instead.
-const DUBAI_TZ = 'Asia/Dubai';
-const toDubaiDateStr = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: DUBAI_TZ }).format(d);
+// (and "this month") comparison below is anchored to Asia/Dubai instead, via
+// the shared helpers in ../utils/dateUtils.
 
 export const Dashboard = ({ setActivePage }) => {
   const { db, currentUser, selectedSiteId } = useApp();
@@ -335,22 +335,18 @@ export const Dashboard = ({ setActivePage }) => {
   // SHARED: Monthly Sales Overview
   // ═══════════════════════════════════════════
   const renderMonthlySalesOverview = (filteredSoldCoupons) => {
-    const now = new Date();
+    // Anchor to the current month in Dubai time, not the viewer's device.
+    const [nowYear, nowMonth] = dubaiMonthKey(new Date()).split('-').map(Number);
     const months = Array.from({ length: 6 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+      const d = new Date(Date.UTC(nowYear, nowMonth - 1 - (5 - i), 1));
       return {
-        label: d.toLocaleString('default', { month: 'short' }),
-        year: d.getFullYear(),
-        month: d.getMonth(),
+        label: d.toLocaleString('default', { month: 'short', timeZone: 'UTC' }),
+        key: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`,
       };
     });
 
     const monthData = months.map(m => {
-      const sales = filteredSoldCoupons.filter(c => {
-        if (!c.soldAt) return false;
-        const d = new Date(c.soldAt);
-        return d.getFullYear() === m.year && d.getMonth() === m.month;
-      });
+      const sales = filteredSoldCoupons.filter(c => c.soldAt && dubaiMonthKey(c.soldAt) === m.key);
       return {
         label: m.label,
         count: sales.length,
@@ -432,12 +428,9 @@ export const Dashboard = ({ setActivePage }) => {
     const ownerTodaySales = ownerSoldCoupons.filter(c => c.soldAt && toDubaiDateStr(new Date(c.soldAt)) === today);
     const ownerTodayRevenue = ownerTodaySales.reduce((sum, c) => sum + (Number(c.salePrice) || 0), 0);
 
-    // This month's sales
-    const now = new Date();
-    const ownerMonthSales = ownerSoldCoupons.filter(c => {
-      const d = new Date(c.soldAt);
-      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-    });
+    // This month's sales (Dubai calendar month, not the viewer's device month)
+    const thisMonthKey = dubaiMonthKey(new Date());
+    const ownerMonthSales = ownerSoldCoupons.filter(c => c.soldAt && dubaiMonthKey(c.soldAt) === thisMonthKey);
     const ownerMonthRevenue = ownerMonthSales.reduce((sum, c) => sum + (Number(c.salePrice) || 0), 0);
 
     // Pending collections — only staff assigned to this owner's sites.
@@ -659,7 +652,7 @@ export const Dashboard = ({ setActivePage }) => {
                       Code: {sale.code}
                     </div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>
-                      {sale.customerName ? `Customer: ${sale.customerName}` : 'Walk-in'} • {new Date(sale.soldAt).toLocaleTimeString()}
+                      {sale.customerName ? `Customer: ${sale.customerName}` : 'Walk-in'} • {formatDubaiTime(sale.soldAt)}
                     </div>
                   </div>
                   <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--green)' }}>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Wallet, Search, Filter, Plus, ArrowRightLeft } from 'lucide-react';
+import { dubaiNowISOString } from '../utils/dateUtils';
 
 export const Wallets = () => {
   const { db, currentUser, showToast } = useApp();
@@ -79,7 +80,7 @@ export const Wallets = () => {
       toWalletId: amt >= 0 ? targetWalletId : 'w-system',
       amount: Math.abs(amt),
       type: 'ADJUSTMENT',
-      timestamp: new Date().toISOString(),
+      timestamp: dubaiNowISOString(),
       remarks: adjustRemarks || `Admin balance adjustment of ${amt} AED`,
       createdByUserId: currentUser.id
     });

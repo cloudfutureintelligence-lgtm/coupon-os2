@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { ShieldAlert, Search, RefreshCw } from 'lucide-react';
+import { formatDubaiDateTime } from '../utils/dateUtils';
 
 export const AuditLogs = () => {
   const { db, showToast } = useApp();
@@ -110,7 +111,7 @@ export const AuditLogs = () => {
                 return (
                   <tr key={log.id}>
                     <td className="td-monospaced" style={{ fontSize: '0.75rem' }}>
-                      {new Date(log.timestamp).toLocaleString()}
+                      {formatDubaiDateTime(log.timestamp)}
                     </td>
                     <td>
                       <span className={`pill-badge ${actionBadgeClass}`}>

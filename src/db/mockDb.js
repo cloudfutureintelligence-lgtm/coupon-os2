@@ -1,5 +1,6 @@
 // CouponOS — Supabase Database Engine
 import { supabase } from './supabase';
+import { dubaiNowISOString, formatDubaiDateTime } from '../utils/dateUtils';
 
 const uid = () => 'id-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
 const txid = () => 'tx-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
@@ -152,7 +153,7 @@ export const updateSiteSubscription = async (siteId, expiryIso, currentUserId) =
   const { error } = await supabase.from('sites').update({ subscription_expiry: expiryIso || null }).eq('id', siteId);
   if (error) throw new Error(error.message);
   const detail = expiryIso
-    ? `Set subscription for ${site?.name || siteId} to renew/expire on ${new Date(expiryIso).toLocaleString()}`
+    ? `Set subscription for ${site?.name || siteId} to renew/expire on ${formatDubaiDateTime(expiryIso)}`
     : `Cleared subscription expiry for ${site?.name || siteId} (lifetime access)`;
   await logAction(currentUserId || 'admin', 'SITE_SUBSCRIPTION_UPDATE', detail);
 };
@@ -256,7 +257,7 @@ export const importCoupons = async (csvLines, importedByUserId, siteId = null) =
   const { data: userRow } = await supabase.from('users').select('username').eq('id', importedByUserId).single();
   const username = userRow?.username || importedByUserId;
   const toInsert = [], historyToInsert = [], errors = [];
-  const timestamp = new Date().toISOString();
+  const timestamp = dubaiNowISOString();
   csvLines.forEach((line, index) => {
     const parts = line.split(',').map(s => s.trim());
     if (parts.length < 2) { errors.push('Row ' + (index+1) + ': Need code, profile'); return; }

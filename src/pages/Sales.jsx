@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck, Gift, Lock, Share2 } from 'lucide-react';
 import { sendCouponSms, normalisePhone, isAllowedForProvider } from '../utils/smsService';
 import { SalesAnalyticsPanel } from '../components/SalesAnalyticsPanel';
+import { dubaiDateStr as toDateStr, formatDubaiDate, formatDubaiDateTime, dubaiNowISOString } from '../utils/dateUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Role visibility matrix for sold coupon list
@@ -13,29 +14,8 @@ import { SalesAnalyticsPanel } from '../components/SalesAnalyticsPanel';
 //   Accountant   → all sales (all sites)
 //   Admin        → all sales (all sites, filterable)
 // ─────────────────────────────────────────────────────────────────────────────
-
-// ── Date helpers (all locked to Dubai / GST time, regardless of viewer's device) ──
-const DUBAI_TZ = 'Asia/Dubai';
-
-// "YYYY-MM-DD" for a given moment, as that date is in Dubai (not UTC, not local device tz)
-const toDateStr = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: DUBAI_TZ }).format(d);
-
-// Date-only display, e.g. "23 Jul 2026" — always Dubai's calendar date
-const formatDubaiDate = (dateInput) => {
-  if (!dateInput) return '—';
-  return new Date(dateInput).toLocaleDateString('en-GB', {
-    timeZone: DUBAI_TZ, day: '2-digit', month: 'short', year: 'numeric',
-  });
-};
-
-// Date + time display, e.g. "23 Jul 2026, 02:45 PM" — always Dubai time
-const formatDubaiDateTime = (dateInput) => {
-  if (!dateInput) return '—';
-  return new Date(dateInput).toLocaleString('en-GB', {
-    timeZone: DUBAI_TZ, day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: true,
-  });
-};
+// Date/time formatting is centralized in ../utils/dateUtils (Dubai/GST-locked,
+// regardless of the viewer's device timezone) — don't re-declare helpers here.
 
 const todayStr  = () => toDateStr(new Date());
 
@@ -132,7 +112,7 @@ export const Sales = () => {
           isFree:         freeSale,
           customerName:   custName,
           customerPhone:  custPhone,
-          soldAt:         new Date().toISOString(),
+          soldAt:         dubaiNowISOString(),
           soldByUserId:   currentUser.id,
         };
         setPendingSale(optimistic);

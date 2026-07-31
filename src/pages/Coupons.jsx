@@ -17,6 +17,7 @@ import {
   Trash2,
   CheckSquare
 } from 'lucide-react';
+import { formatDubaiDateTime } from '../utils/dateUtils';
 
 const PAGE_SIZE = 50;
 const STATUS_ORDER = { Available: 0, Sold: 1, Expired: 2, Cancelled: 3 };
@@ -763,7 +764,7 @@ export const Coupons = () => {
                           {log.details}
                         </div>
                         <div style={{ fontSize: '0.68rem', color: 'var(--text-3)' }}>
-                          By: {log.user} • {new Date(log.timestamp).toLocaleString()}
+                          By: {log.user} • {formatDubaiDateTime(log.timestamp)}
                         </div>
                       </div>
                     </div>

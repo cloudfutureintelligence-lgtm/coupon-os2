@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Plus, DollarSign, Users, Loader2 } from 'lucide-react';
+import { formatDubaiDateTime } from '../utils/dateUtils';
 
 // FIX 5: Full role-based cash collection hierarchy
 // Super Staff  → collect from Staff
@@ -354,7 +355,7 @@ export const CashCollection = () => {
                       </div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>
                         By: {byUser?.name || cc.collected_by_user_id || cc.collectedByUserId}
-                        {ts && ` • ${new Date(ts).toLocaleString()}`}
+                        {ts && ` • ${formatDubaiDateTime(ts)}`}
                         {cc.remarks && ` • "${cc.remarks}"`}
                       </div>
                     </div>

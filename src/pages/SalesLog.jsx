@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Receipt, Search, Filter, X, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { dubaiDateStr as toDubaiDateStr, formatDubaiDateTime } from '../utils/dateUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sales Log — dedicated page with full search, filter & pagination
@@ -13,25 +14,12 @@ import { Receipt, Search, Filter, X, ChevronLeft, ChevronRight, Download } from 
 //   Accountant   → all sales, all sites
 //   Admin        → all sales, all sites
 // ─────────────────────────────────────────────────────────────────────────────
+// Date/time formatting is centralized in ../utils/dateUtils (Dubai/GST-locked,
+// regardless of the viewer's device timezone) — don't re-declare helpers here.
 
 const PAGE_SIZE = 50;
 
-// ── Date helpers (all locked to Dubai / GST time, regardless of viewer's device) ──
-const DUBAI_TZ = 'Asia/Dubai';
-
-// "YYYY-MM-DD" for a given moment, as that date is in Dubai (not UTC, not local device tz)
-const toDubaiDateStr = (dateInput) => new Intl.DateTimeFormat('en-CA', { timeZone: DUBAI_TZ }).format(new Date(dateInput));
-
 const todayStr = () => toDubaiDateStr(new Date());
-
-// Date + time display, e.g. "23 Jul 2026, 02:45 PM" — always Dubai time
-const formatDubaiDateTime = (dateInput) => {
-  if (!dateInput) return '—';
-  return new Date(dateInput).toLocaleString('en-GB', {
-    timeZone: DUBAI_TZ, day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: true,
-  });
-};
 
 export const SalesLog = () => {
   const { db, currentUser } = useApp();
