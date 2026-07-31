@@ -16,6 +16,14 @@ import {
   BookOpen
 } from 'lucide-react';
 
+// All coupons are sold across UAE/KSA/Qatar sites but the business day boundary
+// is Dubai midnight. Comparing with the viewer's own device/browser timezone
+// (as toDateString() does) misclassifies sales made near midnight depending on
+// where the staff member happens to be logged in from — so every "today"
+// comparison below is anchored to Asia/Dubai instead.
+const DUBAI_TZ = 'Asia/Dubai';
+const toDubaiDateStr = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: DUBAI_TZ }).format(d);
+
 export const Dashboard = ({ setActivePage }) => {
   const { db, currentUser, selectedSiteId } = useApp();
 
@@ -62,9 +70,9 @@ export const Dashboard = ({ setActivePage }) => {
   const totalCost = soldCoupons.reduce((sum, c) => sum + c.cost, 0);
   const totalProfit = totalRevenue - totalCost;
 
-  // Today's Sales
-  const today = new Date().toDateString();
-  const todaySales = soldCoupons.filter(c => new Date(c.soldAt).toDateString() === today);
+  // Today's Sales (Dubai calendar day, not the viewer's local device day)
+  const today = toDubaiDateStr(new Date());
+  const todaySales = soldCoupons.filter(c => c.soldAt && toDubaiDateStr(new Date(c.soldAt)) === today);
   const todayRevenue = todaySales.reduce((sum, c) => sum + c.salePrice, 0);
 
   // Active sites
@@ -421,7 +429,7 @@ export const Dashboard = ({ setActivePage }) => {
     const ownerTotalRevenue = ownerSoldCoupons.reduce((sum, c) => sum + (Number(c.salePrice) || 0), 0);
 
     // Today's sales
-    const ownerTodaySales = ownerSoldCoupons.filter(c => new Date(c.soldAt).toDateString() === today);
+    const ownerTodaySales = ownerSoldCoupons.filter(c => c.soldAt && toDubaiDateStr(new Date(c.soldAt)) === today);
     const ownerTodayRevenue = ownerTodaySales.reduce((sum, c) => sum + (Number(c.salePrice) || 0), 0);
 
     // This month's sales
@@ -602,7 +610,7 @@ export const Dashboard = ({ setActivePage }) => {
     const personalWallet = wallets.find(w => w.ownerId === currentUser.id && w.ownerType === 'USER_SALES');
     const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
     const availableSiteStock = coupons.filter(c => mySiteIds.includes(c.siteId) && c.status === 'Available').length;
-    const mySalesToday = coupons.filter(c => c.soldByUserId === currentUser.id && c.status === 'Sold' && new Date(c.soldAt).toDateString() === today);
+    const mySalesToday = coupons.filter(c => c.soldByUserId === currentUser.id && c.status === 'Sold' && c.soldAt && toDubaiDateStr(new Date(c.soldAt)) === today);
 
     return (
       <>
