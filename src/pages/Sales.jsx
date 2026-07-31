@@ -539,7 +539,7 @@ export const Sales = () => {
                 await navigator.share({
                   files: [file],
                   title: 'Coupon Code',
-                  text: `Access Code: ${soldCouponCode}`,
+               //   text: `Access Code: ${soldCouponCode}`,
                 });
               } else {
                 // Fallback: trigger a plain download for browsers/devices
