@@ -538,7 +538,7 @@ export const Sales = () => {
               if (navigator.canShare && navigator.canShare({ files: [file] })) {
                 await navigator.share({
                   files: [file],
-                  title: 'Coupon Code',
+               //   title: 'Coupon Code',
                //   text: `Access Code: ${soldCouponCode}`,
                 });
               } else {
