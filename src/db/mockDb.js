@@ -97,8 +97,21 @@ export const getDb = async () => {
       supabase.from('settings').select('*').limit(1),
       supabase.from('cash_collections').select('*').order('timestamp', { ascending: false })
     ]),
+    // NOTE: pagination correctness requires a fully deterministic sort order.
+    // created_at alone is NOT unique — bulk CSV imports insert many coupons
+    // with the exact same timestamp. Without a tiebreaker, Postgres is free
+    // to order those tied rows differently across these separate parallel
+    // range() queries, which can cause rows sitting at a page boundary to be
+    // silently dropped from every page (never duplicated, just missing).
+    // Adding `id` (unique per row) as a secondary sort key makes the overall
+    // ordering deterministic, so every page query agrees on exactly which
+    // rows belong in which page.
     ...Array.from({ length: MAX_PAGES }, (_, i) =>
-      supabase.from('coupons').select('*').order('created_at', { ascending: false }).range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
+      supabase.from('coupons')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
     )
   ]);
 
