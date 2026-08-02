@@ -535,6 +535,23 @@ export const AppProvider = ({ children }) => {
     return await mockDb.getCouponHistory(couponId);
   };
 
+  // ── Scalable coupon access ───────────────────────────────────────────────
+  // Use these instead of `db.coupons` for any page that searches/filters/
+  // paginates coupons. They ask Postgres to do the filtering and only ever
+  // return one page of rows — safe even if the coupons table has millions
+  // of rows, unlike db.coupons which is capped and fully loaded up front.
+  const getCouponsPage = async (opts) => {
+    return await mockDb.getCouponsPage(opts);
+  };
+
+  const getCouponsSummary = async (opts) => {
+    return await mockDb.getCouponsSummary(opts);
+  };
+
+  const getStockCounts = async () => {
+    return await mockDb.getStockCounts();
+  };
+
   return (
     <AppContext.Provider value={{
       db: dbState, currentUser, appLoading: loading, refreshDbState, loginUser, logoutUser,
@@ -548,6 +565,7 @@ export const AppProvider = ({ children }) => {
       reverseTransaction, importCoupons, addSite, addCouponProfile, addUser,
       deleteUser, unlinkUserFromSite, linkUserToSite, deleteSite, deleteCoupon,
       deleteCouponProfile, bulkDeleteCoupons, getCouponHistory,
+      getCouponsPage, getCouponsSummary, getStockCounts,
       walletAdjustment, updateSettings, updateSiteSmsEnabled, updateSiteSubscription, isSiteActive, resetDatabase
     }}>
       {children}

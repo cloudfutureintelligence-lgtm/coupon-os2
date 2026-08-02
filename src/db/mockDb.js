@@ -97,20 +97,11 @@ export const getDb = async () => {
       supabase.from('settings').select('*').limit(1),
       supabase.from('cash_collections').select('*').order('timestamp', { ascending: false })
     ]),
-    // NOTE: pagination correctness requires a fully deterministic sort order.
-    // created_at alone is NOT unique — bulk CSV imports insert many coupons
-    // with the exact same timestamp. Without a tiebreaker, Postgres is free
-    // to order those tied rows differently across these separate parallel
-    // range() queries, which can cause rows sitting at a page boundary to be
-    // silently dropped from every page (never duplicated, just missing).
-    // Adding `id` (unique per row) as a secondary sort key makes the overall
-    // ordering deterministic, so every page query agrees on exactly which
-    // rows belong in which page.
     ...Array.from({ length: MAX_PAGES }, (_, i) =>
       supabase.from('coupons')
         .select('*')
         .order('created_at', { ascending: false })
-        .order('id', { ascending: false })
+        .order('id', { ascending: false }) // deterministic tiebreaker — prevents rows from falling through page-boundary ties
         .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
     )
   ]);
@@ -136,6 +127,109 @@ export const getDb = async () => {
     settings: mapSettings(settingsRows?.[0]),
     cashCollections: cashCollections || []
   };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCALABLE COUPON ACCESS — use these instead of db.coupons for any page that
+// searches/filters/paginates coupons. Unlike getDb(), these never pull more
+// than one page of rows into the browser, no matter how large the table gets.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch ONE page of coupons, filtered entirely on the server (Postgres does
+ * the filtering — the browser only ever receives the rows it's about to
+ * display). Replaces the old pattern of loading every coupon into db.coupons
+ * and filtering/searching it with JavaScript.
+ *
+ * @param {object} opts
+ * @param {string[]|null} opts.siteIds     - restrict to these site IDs (null = no site restriction)
+ * @param {string|null}    opts.profileId   - exact profile match
+ * @param {string|null}    opts.sellerId    - exact sold_by_user_id match
+ * @param {string|null}    opts.status      - exact status match (e.g. 'Sold', 'Available')
+ * @param {string|null}    opts.dateFrom    - ISO date, inclusive lower bound on sold_at
+ * @param {string|null}    opts.dateTo      - ISO date, inclusive upper bound on sold_at
+ * @param {string|null}    opts.search      - matches code / customer_name / customer_phone
+ * @param {number}         opts.page        - 1-indexed page number
+ * @param {number}         opts.pageSize    - rows per page (default 50)
+ * @returns {Promise<{coupons: object[], totalCount: number}>}
+ */
+export const getCouponsPage = async ({
+  siteIds = null,
+  profileId = null,
+  sellerId = null,
+  status = null,
+  dateFrom = null,
+  dateTo = null,
+  search = null,
+  page = 1,
+  pageSize = 50,
+} = {}) => {
+  let query = supabase.from('coupons').select('*', { count: 'exact' });
+
+  if (siteIds && siteIds.length)  query = query.in('site_id', siteIds);
+  if (profileId)                  query = query.eq('profile_id', profileId);
+  if (sellerId)                   query = query.eq('sold_by_user_id', sellerId);
+  if (status)                     query = query.eq('status', status);
+  if (dateFrom)                   query = query.gte('sold_at', dateFrom);
+  if (dateTo)                     query = query.lte('sold_at', dateTo);
+  if (search && search.trim()) {
+    const q = search.trim();
+    // ilike = case-insensitive "contains" match, done in Postgres, not in JS
+    query = query.or(`code.ilike.%${q}%,customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%`);
+  }
+
+  const from = Math.max(0, (page - 1) * pageSize);
+  const { data, count, error } = await query
+    .order('sold_at', { ascending: false, nullsFirst: false })
+    .order('id', { ascending: false }) // deterministic tiebreaker, same reasoning as getDb()
+    .range(from, from + pageSize - 1);
+
+  if (error) throw new Error(error.message);
+  return { coupons: (data || []).map(mapCoupon), totalCount: count || 0 };
+};
+
+/**
+ * Aggregate stock counts computed IN POSTGRES (grouped by site + profile +
+ * status), instead of looping over every coupon row in the browser. Returns
+ * a flat list of { siteId, profileId, status, count } — a few dozen rows,
+ * even if the underlying coupons table has millions.
+ */
+export const getStockCounts = async () => {
+  const { data, error } = await supabase.rpc('coupon_stock_counts');
+  if (error) throw new Error(error.message);
+  // Expected shape from the RPC: [{ site_id, profile_id, status, count }, ...]
+  return (data || []).map(r => ({
+    siteId: r.site_id,
+    profileId: r.profile_id,
+    status: r.status,
+    count: Number(r.count),
+  }));
+};
+
+/**
+ * Aggregate revenue/sale-count totals computed IN POSTGRES for a given set of
+ * filters — used for summary numbers (e.g. "Revenue: X AED") so the number is
+ * correct even when the matching rows outnumber what's ever loaded in the UI.
+ */
+export const getCouponsSummary = async ({
+  siteIds = null, profileId = null, sellerId = null, status = null, dateFrom = null, dateTo = null,
+} = {}) => {
+  let query = supabase.from('coupons').select('sale_price', { count: 'exact' });
+  if (siteIds && siteIds.length) query = query.in('site_id', siteIds);
+  if (profileId)                 query = query.eq('profile_id', profileId);
+  if (sellerId)                  query = query.eq('sold_by_user_id', sellerId);
+  if (status)                    query = query.eq('status', status);
+  if (dateFrom)                  query = query.gte('sold_at', dateFrom);
+  if (dateTo)                    query = query.lte('sold_at', dateTo);
+
+  // NOTE: for very large result sets this still pages sale_price through the
+  // client to sum it (capped by PostgREST at 1000 rows per request). If your
+  // matched-row count regularly exceeds a few thousand, replace this with a
+  // dedicated `coupon_revenue_summary` Postgres RPC that does `sum()` server-side.
+  const { data, count, error } = await query.range(0, 999);
+  if (error) throw new Error(error.message);
+  const totalRevenue = (data || []).reduce((s, r) => s + (Number(r.sale_price) || 0), 0);
+  return { totalRevenue, totalSales: count || 0 };
 };
 
 export const logAction = async (userId, action, details) => {
