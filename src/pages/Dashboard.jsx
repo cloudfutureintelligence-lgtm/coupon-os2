@@ -528,8 +528,8 @@ export const Dashboard = ({ setActivePage }) => {
 
         <div className="metrics-grid">
           <StatCard label="Stock Available" value={availableCount} sub="Ready to be sold" icon={CheckCircle2} color="var(--green)" bg="var(--green-light)" />
-          <StatCard label="Today's Sales" value={todaySales.length} sub={`${todayRevenue} AED today`} icon={TrendingUp} color="var(--purple)" bg="var(--purple-light)" />
-          <StatCard label="This Month's Sales" value={managerMonthSales.length} sub={`${managerMonthRevenue} AED this month`} icon={ArrowUpRight} color="var(--blue)" bg="var(--blue-light)" />
+          <StatCard label="Today's Sales" value={`${todayRevenue} AED`} sub={`${todaySales.length} coupon${todaySales.length !== 1 ? 's' : ''} sold today`} icon={TrendingUp} color="var(--purple)" bg="var(--purple-light)" />
+          <StatCard label="This Month's Sales" value={`${managerMonthRevenue} AED`} sub={`${managerMonthSales.length} coupon${managerMonthSales.length !== 1 ? 's' : ''} sold this month`} icon={ArrowUpRight} color="var(--blue)" bg="var(--blue-light)" />
           <StatCard label="Total Site Revenue" value={`${totalRevenue} AED`} sub="From site sales" icon={DollarSign} color="var(--green)" bg="var(--green-light)" />
         </div>
 
