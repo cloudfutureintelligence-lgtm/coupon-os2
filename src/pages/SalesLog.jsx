@@ -231,7 +231,7 @@ export const SalesLog = () => {
 
       const headers = ['#', 'Coupon Code', 'Profile'];
       if (dropdownSites.length > 1) headers.push('Site');
-      headers.push('Sold By', 'Role');
+      headers.push('Sold By',/* 'Role' */);
       if (showRevenue) headers.push('Price (AED)', 'Free Coupon');
       headers.push('Customer Name', 'Mobile', 'Date & Time');
 
@@ -241,7 +241,7 @@ export const SalesLog = () => {
         const seller  = db.users.find(u => u.id === log.soldByUserId);
         const row = [idx + 1, log.code || '', profile?.name || log.profileId || ''];
         if (dropdownSites.length > 1) row.push(site?.name || '');
-        row.push(seller?.name || '', seller?.role || '');
+        row.push(seller?.name || '', /* seller?.role || '' */);
         if (showRevenue) row.push(log.salePrice ?? '', log.isFree ? 'Yes' : 'No');
         row.push(log.customerName || '', log.customerPhone || '',
           log.soldAt ? formatDubaiDateTime(log.soldAt) : '');
@@ -446,12 +446,12 @@ export const SalesLog = () => {
                       <td>{profile?.name || log.profileId}</td>
                       {dropdownSites.length > 1 && <td>{site?.name || '—'}</td>}
                       <td>
-                        <span style={{ fontWeight: 500 }}>{seller?.name || '—'}</span>
-                        {seller?.role && (
+                        <span style={{ fontWeight: 500 }}>{ seller?.name || '—'}</span>
+                       {/* seller?.role && (
                           <span style={{ fontSize: '0.68rem', color: 'var(--text-3)', marginLeft: '0.3rem' }}>
                             ({seller.role})
                           </span>
-                        )}
+                        ) */} 
                       </td>
                       {showRevenue && (
                         <td style={{ fontWeight: 600, color: 'var(--green)' }}>
