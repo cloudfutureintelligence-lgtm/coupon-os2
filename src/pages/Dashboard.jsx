@@ -507,6 +507,11 @@ export const Dashboard = ({ setActivePage }) => {
       (selectedSiteId === 'all' || c.siteId === selectedSiteId)
     );
 
+    // This Month's Sales (Dubai calendar month, scoped to this manager's sites)
+    const managerThisMonthKey = dubaiMonthKey(new Date());
+    const managerMonthSales = soldCoupons.filter(c => c.soldAt && dubaiMonthKey(c.soldAt) === managerThisMonthKey);
+    const managerMonthRevenue = managerMonthSales.reduce((sum, c) => sum + (Number(c.salePrice) || 0), 0);
+
     return (
       <>
         <div className="page-header-row">
@@ -522,9 +527,9 @@ export const Dashboard = ({ setActivePage }) => {
         </div>
 
         <div className="metrics-grid">
-          <StatCard label="Coupons Stock" value={totalCouponsCount} sub="Assigned to your sites" icon={Ticket} color="var(--blue)" bg="var(--blue-light)" />
           <StatCard label="Stock Available" value={availableCount} sub="Ready to be sold" icon={CheckCircle2} color="var(--green)" bg="var(--green-light)" />
-          <StatCard label="Sold Coupons" value={soldCount} sub="Total site activations" icon={TrendingUp} color="var(--purple)" bg="var(--purple-light)" />
+          <StatCard label="Today's Sales" value={todaySales.length} sub={`${todayRevenue} AED today`} icon={TrendingUp} color="var(--purple)" bg="var(--purple-light)" />
+          <StatCard label="This Month's Sales" value={managerMonthSales.length} sub={`${managerMonthRevenue} AED this month`} icon={ArrowUpRight} color="var(--blue)" bg="var(--blue-light)" />
           <StatCard label="Total Site Revenue" value={`${totalRevenue} AED`} sub="From site sales" icon={DollarSign} color="var(--green)" bg="var(--green-light)" />
         </div>
 
