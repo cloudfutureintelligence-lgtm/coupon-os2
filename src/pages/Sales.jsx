@@ -2,7 +2,6 @@ import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck, Gift, Lock, Share2 } from 'lucide-react';
 import { sendCouponSms, normalisePhone, isAllowedForProvider } from '../utils/smsService';
-import { QRCodeSVG, QRCodeCanvas } from 'qrcode.react';
 import { SalesAnalyticsPanel } from '../components/SalesAnalyticsPanel';
 import { dubaiDateStr as toDateStr, formatDubaiDate, formatDubaiDateTime, dubaiNowISOString } from '../utils/dateUtils';
 
@@ -586,15 +585,6 @@ export const Sales = () => {
                     )}
                   </div>
 
-                  {/* QR code — lets the customer scan instead of typing the code */}
-                  {soldCouponCode && (
-                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.25rem' }}>
-                      <div style={{ background: '#fff', padding: '10px', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-                        <QRCodeSVG value={soldCouponCode} size={140} level="M" includeMargin={false} />
-                      </div>
-                    </div>
-                  )}
-
                   {/* Date & Package summary */}
                   {pendingSale && (
                     <div style={{
@@ -654,12 +644,6 @@ export const Sales = () => {
                       <div style={{ border: `2px dashed ${pendingSale?.isFree ? '#2563eb' : '#16a34a'}`, borderRadius: '10px', padding: '18px 10px', textAlign: 'center', marginBottom: '14px', background: '#f7f8fa' }}>
                         <div style={{ fontSize: '30px', fontWeight: 800, letterSpacing: '1px', fontFamily: "'Courier New', monospace", color: '#111' }}>{soldCouponCode}</div>
                       </div>
-                      {soldCouponCode && (
-                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px' }}>
-                          {/* QRCodeCanvas (not SVG) so html2canvas captures the pixels reliably */}
-                          <QRCodeCanvas value={soldCouponCode} size={140} level="M" includeMargin={false} />
-                        </div>
-                      )}
                       {pendingSale && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#9aa0a6', background: '#f2f3f5', borderRadius: '8px', padding: '10px 13px' }}>
                           <span>Package: <strong style={{ color: '#111' }}>{db.couponProfiles.find(p => p.id === pendingSale.profileId)?.name || '—'}</strong></span>
