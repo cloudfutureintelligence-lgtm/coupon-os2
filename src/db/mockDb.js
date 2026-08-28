@@ -5,12 +5,9 @@ import { dubaiNowISOString, formatDubaiDateTime } from '../utils/dateUtils';
 const uid = () => 'id-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
 const txid = () => 'tx-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
 
-// SECURITY FIX: password removed from mapUser — it must never be sent to the
-// browser. Login is verified inside Postgres via the login_user RPC (see
-// findUser() below); the client never sees the password.
 const mapSite = (r) => r ? ({ id: r.id, name: r.name, location: r.location, status: r.status, smsEnabled: r.sms_enabled !== false, subscriptionExpiry: r.subscription_expiry || null }) : null;
 const mapProfile = (r) => r ? ({ id: r.id, name: r.name, validityDays: r.validity_days, price: r.price, salePrice: r.sale_price, costPrice: r.cost_price, description: r.description, status: r.status }) : null;
-const mapUser = (r) => r ? ({ id: r.id, username: r.username, role: r.role, name: r.name, twoFAEnabled: r.two_fa_enabled }) : null;
+const mapUser = (r) => r ? ({ id: r.id, username: r.username, password: r.password, role: r.role, name: r.name, twoFAEnabled: r.two_fa_enabled }) : null;
 const mapUserSite = (r) => r ? ({ userId: r.user_id, siteId: r.site_id }) : null;
 const mapSitePrice = (r) => r ? ({ siteId: r.site_id, profileId: r.profile_id, salePrice: r.sale_price, costPrice: r.cost_price }) : null;
 const mapCoupon = (r) => r ? ({ id: r.id, code: r.code, profileId: r.profile_id, siteId: r.site_id, cost: r.cost, salePrice: r.sale_price, isFree: !!r.is_free, status: r.status, soldByUserId: r.sold_by_user_id, customerName: r.customer_name, customerPhone: r.customer_phone, soldAt: r.sold_at, createdAt: r.created_at, history: r.coupon_history ? r.coupon_history.map(h => ({ action: h.action, details: h.details, user: h.user_id, timestamp: h.timestamp })) : [] }) : null;
@@ -84,9 +81,11 @@ export const getCouponHistory = async (couponId) => {
  * filter coupons must use getCouponsPage() / getCouponsSummary() / getStockCounts()
  * below, which filter and paginate in Postgres instead of downloading everything.
  *
- * SECURITY FIX: the users query now selects an explicit column list instead
- * of '*' — the password column must never travel to the browser, even for
- * the admin dashboard's user list.
+ * Previously this fetched up to 10,000 coupons (10 x 1000-row pages) and an
+ * unbounded cash_collections table on EVERY call — including after every
+ * single sale, collection, or adjustment via refreshDbState(). That's what
+ * was making both first load and everyday actions slow. It now fetches one
+ * bounded page of each, which is enough for dashboard/recent-activity views.
  */
 export const getDb = async () => {
   const RECENT_COUPONS_LIMIT = 1000;
@@ -99,8 +98,7 @@ export const getDb = async () => {
   ] = await Promise.all([
     supabase.from('sites').select('*').order('name'),
     supabase.from('coupon_profiles').select('*').order('name'),
-    // SECURITY FIX: explicit column list — never select('*') on users.
-    supabase.from('users').select('id, username, name, role, two_fa_enabled').order('name'),
+    supabase.from('users').select('*').order('name'),
     supabase.from('user_sites').select('*'),
     supabase.from('site_prices').select('*'),
     supabase.from('wallets').select('*'),
@@ -141,6 +139,24 @@ export const getDb = async () => {
 // than one page of rows into the browser, no matter how large the table gets.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Fetch ONE page of coupons, filtered entirely on the server (Postgres does
+ * the filtering — the browser only ever receives the rows it's about to
+ * display). Replaces the old pattern of loading every coupon into db.coupons
+ * and filtering/searching it with JavaScript.
+ *
+ * @param {object} opts
+ * @param {string[]|null} opts.siteIds     - restrict to these site IDs (null = no site restriction)
+ * @param {string|null}    opts.profileId   - exact profile match
+ * @param {string|null}    opts.sellerId    - exact sold_by_user_id match
+ * @param {string|null}    opts.status      - exact status match (e.g. 'Sold', 'Available')
+ * @param {string|null}    opts.dateFrom    - ISO date, inclusive lower bound on sold_at
+ * @param {string|null}    opts.dateTo      - ISO date, inclusive upper bound on sold_at
+ * @param {string|null}    opts.search      - matches code / customer_name / customer_phone
+ * @param {number}         opts.page        - 1-indexed page number
+ * @param {number}         opts.pageSize    - rows per page (default 50)
+ * @returns {Promise<{coupons: object[], totalCount: number}>}
+ */
 export const getCouponsPage = async ({
   siteIds = null,
   profileId = null,
@@ -162,22 +178,30 @@ export const getCouponsPage = async ({
   if (dateTo)                     query = query.lte('sold_at', dateTo);
   if (search && search.trim()) {
     const q = search.trim();
+    // ilike = case-insensitive "contains" match, done in Postgres, not in JS
     query = query.or(`code.ilike.%${q}%,customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%`);
   }
 
   const from = Math.max(0, (page - 1) * pageSize);
   const { data, count, error } = await query
     .order('sold_at', { ascending: false, nullsFirst: false })
-    .order('id', { ascending: false })
+    .order('id', { ascending: false }) // deterministic tiebreaker, same reasoning as getDb()
     .range(from, from + pageSize - 1);
 
   if (error) throw new Error(error.message);
   return { coupons: (data || []).map(mapCoupon), totalCount: count || 0 };
 };
 
+/**
+ * Aggregate stock counts computed IN POSTGRES (grouped by site + profile +
+ * status), instead of looping over every coupon row in the browser. Returns
+ * a flat list of { siteId, profileId, status, count } — a few dozen rows,
+ * even if the underlying coupons table has millions.
+ */
 export const getStockCounts = async () => {
   const { data, error } = await supabase.rpc('coupon_stock_counts');
   if (error) throw new Error(error.message);
+  // Expected shape from the RPC: [{ site_id, profile_id, status, count }, ...]
   return (data || []).map(r => ({
     siteId: r.site_id,
     profileId: r.profile_id,
@@ -186,6 +210,11 @@ export const getStockCounts = async () => {
   }));
 };
 
+/**
+ * Aggregate revenue/sale-count totals computed IN POSTGRES for a given set of
+ * filters — used for summary numbers (e.g. "Revenue: X AED") so the number is
+ * correct even when the matching rows outnumber what's ever loaded in the UI.
+ */
 export const getCouponsSummary = async ({
   siteIds = null, profileId = null, sellerId = null, status = null, dateFrom = null, dateTo = null,
 } = {}) => {
@@ -240,35 +269,9 @@ export const logAction = async (userId, action, details) => {
   await supabase.from('audit_logs').insert({ id: uid(), user_id: userId, action, details });
 };
 
-/**
- * SECURITY FIX: login no longer fetches the row and compares the password
- * in JS. It calls the login_user Postgres RPC, which checks the password
- * INSIDE the database and only ever returns safe columns. The password
- * never reaches the browser.
- *
- * Signature changed: findUser now requires the password too, since the
- * check happens server-side. Run security_migration.sql in Supabase first
- * (creates login_user + get_user_by_id + locks the users table with RLS).
- */
-export const findUser = async (username, password) => {
-  const { data, error } = await supabase.rpc('login_user', {
-    p_username: username,
-    p_password: password,
-  });
-  if (error) throw new Error(error.message);
-  return data && data[0] ? mapUser(data[0]) : null;
-};
-
-/**
- * Used only for restoring a saved session on page load — looks a user up
- * by id with NO password check (the password was already verified at the
- * original login). Requires a small companion RPC, get_user_by_id (see
- * security_migration.sql), since RLS blocks direct SELECTs on users.
- */
-export const getUserById = async (userId) => {
-  const { data, error } = await supabase.rpc('get_user_by_id', { p_user_id: userId });
-  if (error) throw new Error(error.message);
-  return data && data[0] ? mapUser(data[0]) : null;
+export const findUser = async (username) => {
+  const { data } = await supabase.from('users').select('*').ilike('username', username).single();
+  return mapUser(data);
 };
 
 export const addSite = async (name, location, currentUserId) => {
@@ -343,12 +346,6 @@ export const unassignProfileFromSite = async (siteId, profileId, currentUserId) 
   await logAction(currentUserId || 'admin', 'PROFILE_UNASSIGNED', 'Unassigned profile ' + profileId + ' from site ' + siteId);
 };
 
-/**
- * addUser still writes the plaintext password column directly (Step 4 —
- * hashing — will change this once you run that part of the SQL migration).
- * Once RLS is enabled on users, this direct insert will fail unless you
- * add a create_user RPC (see security_migration.sql notes).
- */
 export const addUser = async (user, siteIds = [], currentUserId) => {
   const id = 'u-' + user.username.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now();
   const { error } = await supabase.from('users').insert({ id, username: user.username, password: user.password, role: user.role, name: user.name, two_fa_enabled: false });
@@ -391,6 +388,10 @@ export const importCoupons = async (csvLines, importedByUserId, siteId = null) =
   }
   const { data: profiles } = await supabase.from('coupon_profiles').select('*');
   const { data: sitePrices } = await supabase.from('site_prices').select('*');
+  // Paged, not a single .select('code') — past 1000 existing coupons the
+  // unpaged version silently stopped seeing older codes, so duplicates
+  // could slip through (or valid new codes could be wrongly flagged once
+  // that page happened to include a look-alike from the truncated set).
   const existing = await fetchAllRows(() => supabase.from('coupons').select('code'));
   const existingCodes = new Set(existing.map(c => c.code));
   const { data: userRow } = await supabase.from('users').select('username').eq('id', importedByUserId).single();
@@ -414,6 +415,10 @@ export const importCoupons = async (csvLines, importedByUserId, siteId = null) =
     historyToInsert.push({ coupon_id: couponId, action: 'CREATED', details: 'Imported via CSV. Site: ' + (siteId || 'none'), user_id: username, timestamp });
   });
 
+  // Insert in chunks rather than one giant request — keeps large pastes
+  // (hundreds/thousands of codes) well under Supabase's request size and
+  // statement-timeout limits, and lets us report exactly which chunk failed
+  // instead of silently losing rows.
   const INSERT_CHUNK = 200;
   let insertedCount = 0;
   for (let i = 0; i < toInsert.length; i += INSERT_CHUNK) {
@@ -423,7 +428,7 @@ export const importCoupons = async (csvLines, importedByUserId, siteId = null) =
     const { error: couponError } = await supabase.from('coupons').insert(couponChunk);
     if (couponError) {
       errors.push('Insert failed at row ' + (i + 1) + '-' + (i + couponChunk.length) + ': ' + couponError.message);
-      break;
+      break; // stop rather than risk history rows pointing at coupons that never landed
     }
 
     const { error: historyError } = await supabase.from('coupon_history').insert(historyChunk);
@@ -446,6 +451,10 @@ export const deleteCoupon = async (couponId, currentUserId) => {
 };
 
 export const sellCoupon = async (siteId, profileId, soldByUserId, customerName, customerPhone, remarks, isFree = false) => {
+  // All of this now runs as ONE atomic transaction in Postgres (see
+  // sell_coupon_atomic in the SQL migration) instead of separate network
+  // requests. If anything fails partway through, nothing is committed —
+  // no more "coupon marked Sold with no matching wallet credit" risk.
   const { data, error } = await supabase.rpc('sell_coupon_atomic', {
     p_site_id: siteId,
     p_profile_id: profileId,
@@ -461,6 +470,9 @@ export const sellCoupon = async (siteId, profileId, soldByUserId, customerName, 
 };
 
 export const collectCashFromStaff = async (collectedByUserId, collectedFromUserId, amount, siteId, remarks) => {
+  // Runs as one atomic transaction (see collect_cash_simple_atomic) — the
+  // wallet debit, wallet credit, transaction record, and collection record
+  // either all commit together or none do.
   const { data, error } = await supabase.rpc('collect_cash_simple_atomic', {
     p_from_wallet_id: 'w-' + collectedFromUserId + '-sales',
     p_collected_by_user_id: collectedByUserId,
@@ -482,6 +494,9 @@ export const collectCashFromStaff = async (collectedByUserId, collectedFromUserI
 };
 
 export const collectCashFromSuperStaff = async (collectedByUserId, collectedFromUserId, splits, remarks) => {
+  // Runs as one atomic transaction (see collect_cash_dual_wallet_atomic) —
+  // draining sales wallet then collection wallet, crediting the collector,
+  // and recording it all happens together or not at all.
   const totalAmount = splits.reduce((sum, s) => sum + Number(s.amount), 0);
   const siteId = splits[0]?.siteId || null;
 
@@ -531,6 +546,7 @@ export const updateSettings = async (settings, currentUserId) => {
     telegram_webhook_url:         settings.telegramWebhookUrl,
     whatsapp_notification_enabled: settings.whatsappNotificationEnabled,
     two_factor_enabled:           settings.twoFactorEnabled,
+    // SMS gateway
     sms_provider:       settings.smsProvider       || 'twilio',
     twilio_account_sid: settings.twilioAccountSid  || '',
     twilio_auth_token:  settings.twilioAuthToken   || '',
@@ -563,7 +579,12 @@ export const resetDb = async () => {
   ]);
 };
 
+// FIX 5: Collect from Manager (Owner and Accountant)
+// Managers can now sell coupons directly (their own '-sales' wallet) in addition to
+// collecting from Staff/Super Staff (their '-collection' wallet) — drain both, same
+// pattern used for Super Staff, so the collector sees the Manager's full balance.
 export const collectCashFromManager = async (collectedByUserId, collectedFromUserId, amount, siteId, remarks) => {
+  // Runs as one atomic transaction (see collect_cash_dual_wallet_atomic).
   const { data, error } = await supabase.rpc('collect_cash_dual_wallet_atomic', {
     p_collected_by_user_id: collectedByUserId,
     p_collected_from_user_id: collectedFromUserId,
@@ -581,7 +602,9 @@ export const collectCashFromManager = async (collectedByUserId, collectedFromUse
   return { success: true, transactionId: data[0].transaction_id };
 };
 
+// FIX 5: Collect from Owner (Accountant only)
 export const collectCashFromOwner = async (collectedByUserId, collectedFromUserId, amount, siteId, remarks) => {
+  // Runs as one atomic transaction (see collect_cash_simple_atomic).
   const { data, error } = await supabase.rpc('collect_cash_simple_atomic', {
     p_from_wallet_id: 'w-' + collectedFromUserId + '-collection',
     p_collected_by_user_id: collectedByUserId,
