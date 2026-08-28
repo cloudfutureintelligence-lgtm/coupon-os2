@@ -75,15 +75,47 @@ export const getCouponHistory = async (couponId) => {
   }));
 };
 
-export const getDb = async () => {
+// Fetch all coupons, but adaptively: stop as soon as a page comes back
+// shorter than PAGE_SIZE instead of always firing MAX_PAGES requests
+// regardless of how many coupons actually exist. Pages are still fetched
+// with limited concurrency (not all-at-once, not fully serial) so a small
+// table finishes in one round trip and a large table doesn't fire more
+// requests than it needs.
+const fetchAllCoupons = async () => {
   const PAGE_SIZE = 1000;
-  const MAX_PAGES = 10;
+  const CONCURRENCY = 3; // how many pages to request at once per round
+  const buildPage = (i) =>
+    supabase.from('coupons')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false }) // deterministic tiebreaker — prevents rows from falling through page-boundary ties
+      .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1);
 
+  let all = [];
+  let page = 0;
+  while (true) {
+    const batch = await Promise.all(
+      Array.from({ length: CONCURRENCY }, (_, k) => buildPage(page + k))
+    );
+    let hitShortPage = false;
+    for (const res of batch) {
+      if (res.error) throw new Error(res.error.message);
+      const rows = res.data || [];
+      all = all.concat(rows);
+      if (rows.length < PAGE_SIZE) hitShortPage = true;
+    }
+    if (hitShortPage) break;
+    page += CONCURRENCY;
+  }
+  return all;
+};
+
+export const getDb = async () => {
   const [
     [{ data: sites }, { data: profiles }, { data: users }, { data: userSites },
     { data: sitePrices }, { data: wallets },
     { data: transactions }, { data: auditLogs }, { data: settingsRows }, { data: cashCollections }],
-    ...availResults
+    couponsRaw
   ] = await Promise.all([
     Promise.all([
       supabase.from('sites').select('*').order('name'),
@@ -95,22 +127,10 @@ export const getDb = async () => {
       supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500),
       supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
       supabase.from('settings').select('*').limit(1),
-      supabase.from('cash_collections').select('*').order('timestamp', { ascending: false })
+      supabase.from('cash_collections').select('*').order('timestamp', { ascending: false }).limit(500)
     ]),
-    ...Array.from({ length: MAX_PAGES }, (_, i) =>
-      supabase.from('coupons')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .order('id', { ascending: false }) // deterministic tiebreaker — prevents rows from falling through page-boundary ties
-        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
-    )
+    fetchAllCoupons()
   ]);
-
-  let couponsRaw = [];
-  for (const res of availResults) {
-    if (res.error) throw new Error(res.error.message);
-    couponsRaw = couponsRaw.concat(res.data || []);
-  }
 
   const coupons = couponsRaw.map(mapCoupon);
 
