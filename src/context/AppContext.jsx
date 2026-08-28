@@ -47,6 +47,13 @@ export const AppProvider = ({ children }) => {
 
   // ── Initial load ───────────────────────────────────────────────────────────
   // KEY FIX: load db FIRST, then restore session from it — no blank-screen window
+  //
+  // SECURITY FIX: this used to re-verify the saved session by comparing
+  // `user.password === parsed.password` — but passwords are never sent to
+  // the browser anymore, so that comparison is gone entirely. Instead we
+  // just confirm the saved user id still exists (via getUserById, a
+  // password-free RPC) and use that fresh copy of their data. The password
+  // was already checked once, at the original login.
   useEffect(() => {
     const init = async () => {
       setLoading(true);
@@ -55,10 +62,11 @@ export const AppProvider = ({ children }) => {
       if (savedUser && freshDb) {
         try {
           const parsed = JSON.parse(savedUser);
-          // Validate against the freshly loaded db users list (no extra round-trip)
-          const user = await mockDb.findUser(parsed.username);
-          if (user && user.password === parsed.password) {
+          const user = await mockDb.getUserById(parsed.id);
+          if (user) {
             setCurrentUser(user);
+            // Keep localStorage in sync with the fresh (password-free) copy
+            localStorage.setItem('coupon_session_user', JSON.stringify(user));
             // Ensure selectedSiteId is valid for this user
             if (!GLOBAL_ROLES.includes(user.role)) {
               const assignedSites = (freshDb.userSites || [])
@@ -308,9 +316,12 @@ export const AppProvider = ({ children }) => {
   };
 
   // ── Auth ──────────────────────────────────────────────────────────────────
+  // SECURITY FIX: findUser now verifies the password INSIDE Postgres (via
+  // the login_user RPC) and returns a user object with no password field.
+  // We just pass username/password through and trust the result.
   const loginUser = async (username, password) => {
-    const user = await mockDb.findUser(username);
-    if (user && user.password === password) {
+    const user = await mockDb.findUser(username, password);
+    if (user) {
       // Load fresh DB data BEFORE setting currentUser so the app
       // never renders the main layout with an empty db state
       const freshDb = await refreshDbState();
