@@ -218,22 +218,51 @@ export const getStockCounts = async () => {
 export const getCouponsSummary = async ({
   siteIds = null, profileId = null, sellerId = null, status = null, dateFrom = null, dateTo = null,
 } = {}) => {
-  let query = supabase.from('coupons').select('sale_price', { count: 'exact' });
-  if (siteIds && siteIds.length) query = query.in('site_id', siteIds);
-  if (profileId)                 query = query.eq('profile_id', profileId);
-  if (sellerId)                  query = query.eq('sold_by_user_id', sellerId);
-  if (status)                    query = query.eq('status', status);
-  if (dateFrom)                  query = query.gte('sold_at', dateFrom);
-  if (dateTo)                    query = query.lte('sold_at', dateTo);
+  const query = () => {
+    let q = supabase.from('coupons').select('sale_price, cost');
+    if (siteIds && siteIds.length) q = q.in('site_id', siteIds);
+    if (profileId)                 q = q.eq('profile_id', profileId);
+    if (sellerId)                  q = q.eq('sold_by_user_id', sellerId);
+    if (status)                    q = q.eq('status', status);
+    if (dateFrom)                  q = q.gte('sold_at', dateFrom);
+    if (dateTo)                    q = q.lte('sold_at', dateTo);
+    return q;
+  };
 
-  // NOTE: for very large result sets this still pages sale_price through the
-  // client to sum it (capped by PostgREST at 1000 rows per request). If your
-  // matched-row count regularly exceeds a few thousand, replace this with a
-  // dedicated `coupon_revenue_summary` Postgres RPC that does `sum()` server-side.
-  const { data, count, error } = await query.range(0, 999);
-  if (error) throw new Error(error.message);
-  const totalRevenue = (data || []).reduce((s, r) => s + (Number(r.sale_price) || 0), 0);
-  return { totalRevenue, totalSales: count || 0 };
+  const data = await fetchAllRows(query);
+  const totalRevenue = data.reduce((s, r) => s + (Number(r.sale_price) || 0), 0);
+  const totalCost    = data.reduce((s, r) => s + (Number(r.cost) || 0), 0);
+  return { totalRevenue, totalCost, totalSales: data.length };
+};
+
+export const getSalesAnalyticsData = async ({
+  siteIds = null,
+  profileId = null,
+  sellerId = null,
+  dateFrom = null,
+  dateTo = null,
+} = {}) => {
+  const query = () => {
+    let q = supabase.from('coupons')
+      .select('sale_price, cost, sold_at, profile_id, site_id, sold_by_user_id')
+      .eq('status', 'Sold');
+    if (siteIds && siteIds.length) q = q.in('site_id', siteIds);
+    if (profileId)                 q = q.eq('profile_id', profileId);
+    if (sellerId)                  q = q.eq('sold_by_user_id', sellerId);
+    if (dateFrom)                  q = q.gte('sold_at', dateFrom);
+    if (dateTo)                    q = q.lte('sold_at', dateTo);
+    return q;
+  };
+
+  const data = await fetchAllRows(query);
+  return data.map(r => ({
+    salePrice: Number(r.sale_price) || 0,
+    cost: Number(r.cost) || 0,
+    soldAt: r.sold_at,
+    profileId: r.profile_id,
+    siteId: r.site_id,
+    soldByUserId: r.sold_by_user_id
+  }));
 };
 
 export const logAction = async (userId, action, details) => {

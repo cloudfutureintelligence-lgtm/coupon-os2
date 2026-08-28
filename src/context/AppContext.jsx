@@ -15,6 +15,7 @@ const GLOBAL_ROLES = ['Admin'];
 
 export const AppProvider = ({ children }) => {
   const [dbState, setDbState]           = useState(EMPTY_DB);
+  const [stockCounts, setStockCounts]   = useState([]);
   const [loading, setLoading]           = useState(true);
   const [currentUser, setCurrentUser]   = useState(null);
   const [selectedSiteId, setSelectedSiteId] = useState('all');
@@ -31,8 +32,12 @@ export const AppProvider = ({ children }) => {
 
   const refreshDbState = useCallback(async () => {
     try {
-      const db = await mockDb.getDb();
+      const [db, sc] = await Promise.all([
+        mockDb.getDb(),
+        mockDb.getStockCounts()
+      ]);
       setDbState(db);
+      setStockCounts(sc);
       return db;
     } catch (e) {
       console.error('Failed to load DB:', e);
@@ -110,15 +115,15 @@ export const AppProvider = ({ children }) => {
       const site = dbState.sites.find(s => s.id === siteId);
       if (!site) return;
       dbState.couponProfiles.forEach(prof => {
-        const siteAssigned = dbState.coupons.filter(
+        const siteAssignedCount = stockCounts.filter(
           c => c.profileId === prof.id && c.siteId === siteId && (c.status === 'Assigned' || c.status === 'Available')
-        );
-        if (siteAssigned.length > 0 && siteAssigned.length < threshold) {
+        ).reduce((sum, sc) => sum + sc.count, 0);
+        if (siteAssignedCount > 0 && siteAssignedCount < threshold) {
           lowStockAlerts.push({
             id: `warn-${siteId}-${prof.id}`,
             timestamp: new Date().toISOString(),
             type: 'WARNING',
-            message: `Low stock: ${prof.name} at ${site.name} has only ${siteAssigned.length} unit(s) left.`,
+            message: `Low stock: ${prof.name} at ${site.name} has only ${siteAssignedCount} unit(s) left.`,
             icon: 'fa-triangle-exclamation',
             color: 'var(--yellow)',
             bg: 'var(--yellow-light)',
@@ -227,7 +232,7 @@ export const AppProvider = ({ children }) => {
       });
 
     setNotifications([...subscriptionAlerts, ...lowStockAlerts, ...filteredLogs]);
-  }, [dbState, currentUser]);
+  }, [dbState, currentUser, stockCounts]);
 
   // ── Telegram low-stock auto-alerts ────────────────────────────────────────
   // Sends exactly 2 messages per site+profile per stock cycle:
@@ -253,10 +258,10 @@ export const AppProvider = ({ children }) => {
 
     dbState.sites.forEach(site => {
       dbState.couponProfiles.forEach(prof => {
-        const remaining = dbState.coupons.filter(
+        const remaining = stockCounts.filter(
           c => c.profileId === prof.id && c.siteId === site.id &&
                (c.status === 'Assigned' || c.status === 'Available')
-        ).length;
+        ).reduce((sum, sc) => sum + sc.count, 0);
 
         const key = `${site.id}-${prof.id}`;
         const state = telegramAlertState.current[key] || { sentLow: false, sentZero: false };
@@ -293,7 +298,7 @@ export const AppProvider = ({ children }) => {
         }
       });
     });
-  }, [dbState]);
+  }, [dbState, stockCounts]);
 
   const getAccessibleSites = () => {
     if (!currentUser) return [];
@@ -552,13 +557,17 @@ export const AppProvider = ({ children }) => {
     return await mockDb.getStockCounts();
   };
 
+  const getSalesAnalyticsData = async (opts) => {
+    return await mockDb.getSalesAnalyticsData(opts);
+  };
+
   // Memoized so consumers only re-render when a value they actually use
   // changes, instead of on every render of AppProvider (e.g. a toast firing
   // or the search box being typed into was previously re-rendering every
   // screen in the app, because a brand-new object was passed to the
   // Provider on every single render).
   const contextValue = useMemo(() => ({
-    db: dbState, currentUser, appLoading: loading, refreshDbState, loginUser, logoutUser,
+    db: dbState, stockCounts, currentUser, appLoading: loading, refreshDbState, loginUser, logoutUser,
     selectedSiteId, setSelectedSiteId, getAccessibleSites,
     searchQuery, setSearchQuery, theme, toggleTheme,
     notifications, unreadNotifications, setUnreadNotifications,
@@ -569,11 +578,11 @@ export const AppProvider = ({ children }) => {
     reverseTransaction, importCoupons, addSite, addCouponProfile, addUser,
     deleteUser, unlinkUserFromSite, linkUserToSite, deleteSite, deleteCoupon,
     deleteCouponProfile, bulkDeleteCoupons, getCouponHistory,
-    getCouponsPage, getCouponsSummary, getStockCounts,
+    getCouponsPage, getCouponsSummary, getStockCounts, getSalesAnalyticsData,
     walletAdjustment, updateSettings, updateSiteSmsEnabled, updateSiteSubscription, isSiteActive, resetDatabase
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [
-    dbState, currentUser, loading, selectedSiteId, searchQuery, theme,
+    dbState, stockCounts, currentUser, loading, selectedSiteId, searchQuery, theme,
     notifications, unreadNotifications, toastMessage,
   ]);
 

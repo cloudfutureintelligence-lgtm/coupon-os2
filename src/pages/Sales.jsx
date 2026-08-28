@@ -1,9 +1,9 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck, Gift, Lock, Share2 } from 'lucide-react';
 import { sendCouponSms, normalisePhone, isAllowedForProvider } from '../utils/smsService';
 import { SalesAnalyticsPanel } from '../components/SalesAnalyticsPanel';
-import { dubaiDateStr as toDateStr, formatDubaiDate, formatDubaiDateTime, dubaiNowISOString } from '../utils/dateUtils';
+import { formatDubaiDate, formatDubaiDateTime, dubaiNowISOString } from '../utils/dateUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Role visibility matrix for sold coupon list
@@ -17,24 +17,9 @@ import { dubaiDateStr as toDateStr, formatDubaiDate, formatDubaiDateTime, dubaiN
 // Date/time formatting is centralized in ../utils/dateUtils (Dubai/GST-locked,
 // regardless of the viewer's device timezone) — don't re-declare helpers here.
 
-const todayStr  = () => toDateStr(new Date());
-
-const thisMonthStart = () => {
-  const d = new Date();
-  d.setDate(1);
-  return toDateStr(d);
-};
-
-const isInRange = (isoStr, from, to) => {
-  if (!isoStr) return false;
-  const d = isoStr.slice(0, 10); // "YYYY-MM-DD"
-  if (from && d < from) return false;
-  if (to   && d > to  ) return false;
-  return true;
-};
 
 export const Sales = () => {
-  const { db, currentUser, selectedSiteId, sellCoupon, showToast, isSiteActive } = useApp();
+  const { db, stockCounts, currentUser, selectedSiteId, sellCoupon, showToast, isSiteActive, getCouponsPage } = useApp();
 
   // POS state
   const [selectedProfileId, setSelectedProfileId] = useState('all');
@@ -70,9 +55,7 @@ export const Sales = () => {
   // Sales-log search (code, name, mobile)
   const [logSearch, setLogSearch] = useState('');
 
-  if (!currentUser) return null;
-
-  const role     = currentUser.role;
+  const role     = currentUser?.role;
   const isSeller = ['Staff', 'Super Staff', 'Manager'].includes(role);
   const isManager = role === 'Manager';
   const showLog  = ['Staff', 'Super Staff', 'Manager', 'Owner', 'Accountant', 'Admin'].includes(role);
@@ -83,7 +66,9 @@ export const Sales = () => {
 
   // ── POS helpers ────────────────────────────────────────────────────────────
   const getProfileStock = (profileId) =>
-    db.coupons.filter(c => c.siteId === selectedSiteId && c.profileId === profileId && c.status === 'Available').length;
+    stockCounts
+      .filter(c => c.siteId === selectedSiteId && c.profileId === profileId && c.status === 'Available')
+      .reduce((sum, sc) => sum + sc.count, 0);
 
   const getProfilePrice = (profileId) => {
     const ov = db.sitePrices?.find(sp => sp.siteId === selectedSiteId && sp.profileId === profileId);
@@ -134,43 +119,64 @@ export const Sales = () => {
   };
 
   // ── Sales log data ─────────────────────────────────────────────────────────
-  const getSalesLogs = () => {
-    let list = db.coupons.filter(c => c.status === 'Sold');
+  const [salesLogs, setSalesLogs] = useState([]);
 
-    if (role === 'Admin' || role === 'Accountant') {
-      if (selectedSiteId !== 'all') list = list.filter(c => c.siteId === selectedSiteId);
-    } else if (role === 'Owner' || role === 'Manager') {
-      const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
-      list = list.filter(c => mySiteIds.includes(c.siteId));
-    } else if (role === 'Super Staff') {
-      const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
-      const siteUserIds = db.userSites.filter(us => mySiteIds.includes(us.siteId)).map(us => us.userId);
-      list = list.filter(c => mySiteIds.includes(c.siteId) &&
-        (c.soldByUserId === currentUser.id || siteUserIds.includes(c.soldByUserId)));
-    } else {
-      // Staff — own sales only
-      list = list.filter(c => c.soldByUserId === currentUser.id);
-    }
+  useEffect(() => {
+    if (!showLog) return;
+    let active = true;
+    
+    const fetchRecentSales = async () => {
+      try {
+        let siteIds = null;
+        let sellerId = null;
+        
+        if (role === 'Admin' || role === 'Accountant') {
+          if (selectedSiteId !== 'all') siteIds = [selectedSiteId];
+        } else if (role === 'Owner' || role === 'Manager' || role === 'Super Staff') {
+          const mySiteIds = db.userSites.filter(us => us.userId === currentUser?.id).map(us => us.siteId);
+          if (selectedSiteId !== 'all') {
+            siteIds = mySiteIds.includes(selectedSiteId) ? [selectedSiteId] : ['none'];
+          } else {
+            siteIds = mySiteIds.length > 0 ? mySiteIds : ['none'];
+          }
+        } else {
+          // Staff: own sales only
+          sellerId = currentUser.id;
+        }
 
-    // Merge optimistic pending sale (won't be in db yet right after selling)
-    if (pendingSale && !list.find(c => c.code === pendingSale.code)) {
-      list = [pendingSale, ...list];
-    }
+        const res = await getCouponsPage({
+          siteIds,
+          sellerId,
+          status: 'Sold',
+          search: logSearch.trim() || null,
+          page: 1,
+          pageSize: 50
+        });
+        
+        if (active) {
+          let list = res.coupons;
+          if (pendingSale && !list.find(c => c.code === pendingSale.code)) {
+            const matchesSearch = !logSearch.trim() || 
+              pendingSale.code?.toLowerCase().includes(logSearch.trim().toLowerCase()) ||
+              pendingSale.customerName?.toLowerCase().includes(logSearch.trim().toLowerCase()) ||
+              pendingSale.customerPhone?.toLowerCase().includes(logSearch.trim().toLowerCase());
+            
+            if (matchesSearch) {
+              list = [pendingSale, ...list];
+            }
+          }
+          setSalesLogs(list);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
 
-    // Search: coupon code, customer name, OR mobile/phone number
-    if (logSearch.trim()) {
-      const q = logSearch.trim().toLowerCase();
-      list = list.filter(c =>
-        c.code?.toLowerCase().includes(q) ||
-        c.customerName?.toLowerCase().includes(q) ||
-        c.customerPhone?.toLowerCase().includes(q)
-      );
-    }
+    fetchRecentSales();
+    return () => { active = false; };
+  }, [role, selectedSiteId, logSearch, pendingSale, currentUser, db.userSites, showLog, getCouponsPage]);
 
-    return list;
-  };
-
-  const salesLogs = showLog ? getSalesLogs() : [];
+  if (!currentUser) return null;
 
   // ── Analytics rendered via shared SalesAnalyticsPanel component ─────────────
 

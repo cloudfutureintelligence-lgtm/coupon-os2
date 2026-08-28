@@ -1,38 +1,32 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
-  Ticket, 
   Search, 
   Plus, 
   Upload, 
   History, 
   MapPin, 
-  Tag, 
-  Filter, 
-  ArrowRight,
   ExternalLink,
   ChevronRight,
   ChevronLeft,
-  FileSpreadsheet,
-  Trash2,
-  CheckSquare
+  Trash2
 } from 'lucide-react';
 import { formatDubaiDateTime } from '../utils/dateUtils';
 
 const PAGE_SIZE = 50;
-const STATUS_ORDER = { Available: 0, Sold: 1, Expired: 2, Cancelled: 3 };
 
 export const Coupons = () => {
   const { 
     db, 
+    stockCounts,
     currentUser, 
     selectedSiteId, 
     importCoupons,
-    deleteCoupon,
     bulkDeleteCoupons,
     isSiteActive,
     showToast,
-    getCouponHistory
+    getCouponHistory,
+    getCouponsPage
   } = useApp();
 
   // Search & Filter state
@@ -79,16 +73,60 @@ export const Coupons = () => {
     try {
       const logs = await getCouponHistory(coupon.id);
       setHistoryLogs(logs);
-    } catch (e) {
+    } catch {
       showToast('Error loading coupon history');
     } finally {
       setLoadingHistory(false);
     }
   };
 
-  if (!currentUser) return null;
+  const [pageRows, setPageRows] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
 
-  const isAdmin = currentUser.role === 'Admin';
+  const [prevSearch, setPrevSearch]   = useState(localSearch);
+  const [prevStatus, setPrevStatus]   = useState(statusFilter);
+  const [prevProfile, setPrevProfile] = useState(profileFilter);
+  const [prevSite, setPrevSite]       = useState(selectedSiteId);
+
+  if (localSearch !== prevSearch || statusFilter !== prevStatus || profileFilter !== prevProfile || selectedSiteId !== prevSite) {
+    setPrevSearch(localSearch);
+    setPrevStatus(statusFilter);
+    setPrevProfile(profileFilter);
+    setPrevSite(selectedSiteId);
+    setCurrentPage(1);
+  }
+
+  const isAdmin = currentUser?.role === 'Admin';
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let active = true;
+    
+    const fetchCoupons = async () => {
+      try {
+        const filters = {
+          siteIds: selectedSiteId !== 'all' ? [selectedSiteId] : null,
+          profileId: profileFilter !== 'all' ? profileFilter : null,
+          status: statusFilter !== 'all' ? statusFilter : null,
+          search: localSearch.trim() || null,
+          page: currentPage,
+          pageSize: PAGE_SIZE
+        };
+        const res = await getCouponsPage(filters);
+        if (active) {
+          setPageRows(res.coupons);
+          setTotalCount(res.totalCount);
+        }
+      } catch {
+        showToast('Error loading coupons list');
+      }
+    };
+
+    fetchCoupons();
+    return () => { active = false; };
+  }, [isAdmin, selectedSiteId, profileFilter, statusFilter, localSearch, currentPage, getCouponsPage, showToast]);
+
+  if (!currentUser) return null;
 
   // ═══════════════════════════════════════════
   // Non-Admin Restricted View (Hides Unsold Codes)
@@ -118,7 +156,7 @@ export const Coupons = () => {
                 </div>
                 <div className="ui-card-body" style={{ padding: '0.75rem 1rem' }}>
                   {db.couponProfiles.map(prof => {
-                    const count = db.coupons.filter(c => c.siteId === site.id && c.profileId === prof.id && c.status === 'Available').length;
+                    const count = stockCounts.filter(c => c.siteId === site.id && c.profileId === prof.id && c.status === 'Available').reduce((sum, sc) => sum + sc.count, 0);
                     const override = db.sitePrices?.find(sp => sp.siteId === site.id && sp.profileId === prof.id);
                     const price = override ? override.salePrice : prof.salePrice;
 
@@ -146,41 +184,8 @@ export const Coupons = () => {
     );
   }
 
-  // Get accessible coupons (Admin only view)
-  const getFilteredCoupons = () => {
-    let list = db.coupons;
-
-    // Filter by navbar site selector
-    if (selectedSiteId !== 'all') {
-      list = list.filter(c => c.siteId === selectedSiteId);
-    }
-
-    // Local filters
-    if (localSearch) {
-      const q = localSearch.toLowerCase();
-      list = list.filter(c => c.code.toLowerCase().includes(q));
-    }
-
-    if (statusFilter !== 'all') {
-      list = list.filter(c => c.status.toLowerCase() === statusFilter.toLowerCase());
-    }
-
-    if (profileFilter !== 'all') {
-      list = list.filter(c => c.profileId === profileFilter);
-    }
-
-    return list;
-  };
-
-  const filteredCoupons = useMemo(() => {
-    const list = getFilteredCoupons();
-    list.sort((a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9));
-    return list;
-  }, [db.coupons, selectedSiteId, localSearch, statusFilter, profileFilter]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredCoupons.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const pageStart  = (currentPage - 1) * PAGE_SIZE;
-  const pageRows   = filteredCoupons.slice(pageStart, pageStart + PAGE_SIZE);
 
   const goToPage = (p) => setCurrentPage(Math.max(1, Math.min(p, totalPages)));
 
@@ -307,10 +312,10 @@ export const Coupons = () => {
               <th style={{ width: '36px' }}>
                 <input
                   type="checkbox"
-                  checked={filteredCoupons.length > 0 && filteredCoupons.every(c => selectedIds.has(c.id))}
+                  checked={pageRows.length > 0 && pageRows.every(c => selectedIds.has(c.id))}
                   onChange={(e) => {
                     if (e.target.checked) {
-                      setSelectedIds(new Set(filteredCoupons.map(c => c.id)));
+                      setSelectedIds(new Set(pageRows.map(c => c.id)));
                     } else {
                       setSelectedIds(new Set());
                     }
@@ -336,7 +341,7 @@ export const Coupons = () => {
                 </td>
               </tr>
             ) : (
-              pageRows.map((coupon, idx) => {
+              pageRows.map((coupon) => {
                 const profile = db.couponProfiles.find(p => p.id === coupon.profileId);
                 const site = db.sites.find(s => s.id === coupon.siteId);
                 
@@ -400,7 +405,7 @@ export const Coupons = () => {
           background: 'var(--surface)', borderRadius: '0 0 var(--radius) var(--radius)',
         }}>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>
-            {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filteredCoupons.length)} of {filteredCoupons.length} coupons &nbsp;·&nbsp; {PAGE_SIZE} per page
+            {pageStart + 1}–{Math.min(pageStart + pageRows.length, totalCount)} of {totalCount} coupons &nbsp;·&nbsp; {PAGE_SIZE} per page
           </span>
           <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
             <button style={pageBtnStyle(false)} disabled={currentPage === 1} onClick={() => goToPage(currentPage - 1)}>

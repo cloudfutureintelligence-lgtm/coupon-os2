@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { BarChart2, Calendar, Download, Printer, Filter } from 'lucide-react';
+import { BarChart2, Calendar, Download, Printer, Filter, Loader2 } from 'lucide-react';
 import { dubaiDateStr as toDateStr, dubaiStartOfDay, dubaiEndOfDay, formatDubaiDateTime } from '../utils/dateUtils';
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -32,15 +32,16 @@ const isInRange = (isoStr, from, to) => {
  *   showTransactions — if false, hide the full transaction detail table (default true)
  */
 export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = true }) => {
-  const { db, currentUser, showToast, selectedSiteId, setSelectedSiteId } = useApp();
+  const { db, currentUser, showToast, selectedSiteId, setSelectedSiteId, getSalesAnalyticsData } = useApp();
 
   const [dateMode, setDateMode]     = useState('today');
   const [customFrom, setCustomFrom] = useState(todayStr());
   const [customTo, setCustomTo]     = useState(todayStr());
 
-  if (!currentUser) return null;
+  const [salesData, setSalesData] = useState([]);
+  const [loadingSales, setLoadingSales] = useState(true);
 
-  const role = currentUser.role;
+  const role = currentUser?.role;
 
   const getRange = () => {
     if (dateMode === 'today')  return { from: todayStr(),       to: todayStr() };
@@ -55,23 +56,67 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
   // limited to their own assigned sites via db.userSites.
   const visibleSiteIds = role === 'Admin'
     ? db.sites.map(s => s.id)
-    : db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+    : db.userSites.filter(us => us.userId === currentUser?.id).map(us => us.siteId);
 
   // Apply site filter
   const filteredSiteIds = selectedSiteId === 'all'
     ? visibleSiteIds
     : visibleSiteIds.filter(id => id === selectedSiteId);
 
+  useEffect(() => {
+    if (!currentUser) return;
+    let active = true;
+
+    const fetchAnalytics = async () => {
+      setLoadingSales(true);
+      try {
+        let siteIds = null;
+        if (role === 'Admin') {
+          if (selectedSiteId !== 'all') siteIds = [selectedSiteId];
+        } else {
+          const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+          if (selectedSiteId !== 'all') {
+            siteIds = mySiteIds.includes(selectedSiteId) ? [selectedSiteId] : ['none'];
+          } else {
+            siteIds = mySiteIds.length > 0 ? mySiteIds : ['none'];
+          }
+        }
+        
+        const GST_OFFSET = '+04:00';
+        const res = await getSalesAnalyticsData({
+          siteIds,
+          dateFrom: from ? `${from}T00:00:00${GST_OFFSET}` : null,
+          dateTo: to ? `${to}T23:59:59${GST_OFFSET}` : null
+        });
+        
+        if (active) {
+          setSalesData(res);
+        }
+      } catch (e) {
+        console.error('Failed to fetch sales analytics data:', e);
+      } finally {
+        if (active) setLoadingSales(false);
+      }
+    };
+
+    fetchAnalytics();
+    return () => { active = false; };
+  }, [currentUser, role, selectedSiteId, from, to, db.userSites, getSalesAnalyticsData]);
+
+  if (!currentUser) return null;
+
   // Build per-site stats
   const siteStats = filteredSiteIds.map(siteId => {
     const site = db.sites.find(s => s.id === siteId);
-    let sold = db.coupons.filter(c => c.status === 'Sold' && c.siteId === siteId);
+    let sold = salesData.filter(c => c.siteId === siteId);
 
     if (pendingSale && pendingSale.siteId === siteId && !sold.find(c => c.code === pendingSale.code)) {
-      sold = [pendingSale, ...sold];
+      if (isInRange(pendingSale.soldAt, from, to)) {
+        sold = [pendingSale, ...sold];
+      }
     }
 
-    const filtered = sold.filter(c => isInRange(c.soldAt, from, to));
+    const filtered = sold;
 
     const profileMap = {};
     filtered.forEach(c => { profileMap[c.profileId] = (profileMap[c.profileId] || 0) + 1; });
@@ -342,7 +387,22 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
       </div>
 
       {/* ── Revenue by Site + Sales by Profile (side by side) ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+      {loadingSales ? (
+        <div className="ui-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          <style>{`
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+            .spin-icon {
+              animation: spin 1s linear infinite;
+            }
+          `}</style>
+          <Loader2 className="spin-icon" size={24} style={{ color: 'var(--brand-blue)' }} />
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-3)' }}>Loading analytics insights...</span>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
 
         {/* Revenue by Site */}
         <div className="ui-card" style={{ marginBottom: 0 }}>
@@ -618,6 +678,8 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
           </div>
         </div>
       )}
+      </>
+    )}
 
       {/* Print styles */}
       <style>{`

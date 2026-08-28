@@ -1,4 +1,4 @@
-import React from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Ticket, 
@@ -9,11 +9,9 @@ import {
   MapPin, 
   AlertTriangle,
   Users,
-  Percent,
-  ChevronRight,
   ArrowUpRight,
-  User,
-  BookOpen
+  BookOpen,
+  Loader2
 } from 'lucide-react';
 import { dubaiDateStr as toDubaiDateStr, dubaiMonthKey, formatDubaiTime } from '../utils/dateUtils';
 
@@ -25,9 +23,7 @@ import { dubaiDateStr as toDubaiDateStr, dubaiMonthKey, formatDubaiTime } from '
 // the shared helpers in ../utils/dateUtils.
 
 export const Dashboard = ({ setActivePage }) => {
-  const { db, currentUser, selectedSiteId } = useApp();
-
-  if (!currentUser) return null;
+  const { db, stockCounts, currentUser, selectedSiteId, getSalesAnalyticsData } = useApp();
 
   // ── Determine which sites this user can access ────────────────────────────
   // Only Admin is truly global. Every other role (Owner, Manager, Super Owner,
@@ -35,40 +31,67 @@ export const Dashboard = ({ setActivePage }) => {
   // them via db.userSites — selecting "All Sites" in the navbar only ever
   // aggregates THEIR OWN assigned sites, never the whole system.
   const GLOBAL_ROLES = ['Admin'];
-  const userAccessibleSiteIds = GLOBAL_ROLES.includes(currentUser.role)
+  const userAccessibleSiteIds = currentUser ? (GLOBAL_ROLES.includes(currentUser.role)
     ? db.sites.map(s => s.id)
-    : (db.userSites || []).filter(us => us.userId === currentUser.id).map(us => us.siteId);
+    : (db.userSites || []).filter(us => us.userId === currentUser.id).map(us => us.siteId)) : [];
 
-  // Pre-filter coupons to only this user's accessible sites (profile scoping)
-  const profileCoupons = db.coupons.filter(c => userAccessibleSiteIds.includes(c.siteId));
+  const [salesData, setSalesData] = useState([]);
+  const [loadingSales, setLoadingSales] = useState(true);
 
-  // Then apply the selected site filter on top
-  const filterBySite = (items, key = 'siteId') => {
-    if (selectedSiteId === 'all') return items;
-    return items.filter(item => item[key] === selectedSiteId);
-  };
+  useEffect(() => {
+    if (!currentUser) return;
+    let active = true;
 
-  // 1. Data Aggregation
-  const coupons = profileCoupons;
-  const siteCoupons = filterBySite(coupons);
+    const fetchAnalytics = async () => {
+      setLoadingSales(true);
+      try {
+        let siteIds = null;
+        if (currentUser.role === 'Admin') {
+          if (selectedSiteId !== 'all') siteIds = [selectedSiteId];
+        } else {
+          const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+          if (selectedSiteId !== 'all') {
+            siteIds = mySiteIds.includes(selectedSiteId) ? [selectedSiteId] : ['none'];
+          } else {
+            siteIds = mySiteIds.length > 0 ? mySiteIds : ['none'];
+          }
+        }
+        const data = await getSalesAnalyticsData({ siteIds });
+        if (active) {
+          setSalesData(data);
+        }
+      } catch (e) {
+        console.error('Failed to load sales analytics data:', e);
+      } finally {
+        if (active) setLoadingSales(false);
+      }
+    };
 
-  const totalCouponsCount = siteCoupons.length;
-  const availableCount = siteCoupons.filter(c => c.status === 'Available').length;
-  const assignedCount = siteCoupons.filter(c => c.status === 'Assigned').length;
-  const soldCount = siteCoupons.filter(c => c.status === 'Sold').length;
-  const expiredCount = siteCoupons.filter(c => c.status === 'Expired').length;
+    fetchAnalytics();
+    return () => { active = false; };
+  }, [currentUser, selectedSiteId, db.userSites, getSalesAnalyticsData]);
+
+  if (!currentUser) return null;
+
+  // Use stockCounts from context to calculate inventory counts
+  const filteredStock = stockCounts.filter(s =>
+    userAccessibleSiteIds.includes(s.siteId) &&
+    (selectedSiteId === 'all' || s.siteId === selectedSiteId)
+  );
+
+  const availableCount = filteredStock.filter(s => s.status === 'Available').reduce((sum, s) => sum + s.count, 0);
+  const assignedCount  = filteredStock.filter(s => s.status === 'Assigned').reduce((sum, s) => sum + s.count, 0);
+  const soldCount      = filteredStock.filter(s => s.status === 'Sold').reduce((sum, s) => sum + s.count, 0);
+  const expiredCount   = filteredStock.filter(s => s.status === 'Expired').reduce((sum, s) => sum + s.count, 0);
+  const totalCouponsCount = availableCount + assignedCount + soldCount + expiredCount;
 
   // Wallet balances
   const wallets = db.wallets;
-  const transactions = db.transactions;
-
-  // Filter sold coupons by site
-  const soldCoupons = siteCoupons.filter(c => c.status === 'Sold');
+  // Sales data representing sold coupons for the selected scope
+  const soldCoupons = salesData;
 
   // Revenue & Profit calculations
   const totalRevenue = soldCoupons.reduce((sum, c) => sum + c.salePrice, 0);
-  const totalCost = soldCoupons.reduce((sum, c) => sum + c.cost, 0);
-  const totalProfit = totalRevenue - totalCost;
 
   // Today's Sales (Dubai calendar day, not the viewer's local device day)
   const today = toDubaiDateStr(new Date());
@@ -83,13 +106,6 @@ export const Dashboard = ({ setActivePage }) => {
   const staffWallets = wallets.filter(w => w.ownerType === 'USER_SALES');
   const totalPendingCollection = staffWallets.reduce((sum, w) => sum + w.balance, 0);
 
-  // Super staff collection wallets (cash collected from staff, not yet given to accountant)
-  // FIX: Only include wallets owned by Super Staff users — not Accountant/Manager/Owner wallets
-  // which also use USER_COLLECTION type but already belong to the collector.
-  const superStaffIds = new Set(db.users.filter(u => u.role === 'Super Staff').map(u => u.id));
-  const superCollectionWallets = wallets.filter(w => w.ownerType === 'USER_COLLECTION' && superStaffIds.has(w.ownerId));
-  const superCollectedTotal = superCollectionWallets.reduce((sum, w) => sum + w.balance, 0);
-
   // ═══════════════════════════════════════════
   // PROFILE STOCK BREAKDOWN (shown when a specific site is selected)
   // ═══════════════════════════════════════════
@@ -99,8 +115,9 @@ export const Dashboard = ({ setActivePage }) => {
     const site = db.sites.find(s => s.id === selectedSiteId);
     if (!site) return null;
 
-    // Get profiles that have any coupons at this site
-    const profileIds = [...new Set(siteCoupons.map(c => c.profileId))];
+    // Get profiles that have any coupons at this site from stockCounts
+    const siteStock = stockCounts.filter(s => s.siteId === selectedSiteId);
+    const profileIds = [...new Set(siteStock.map(c => c.profileId))];
     const profiles = db.couponProfiles.filter(p => profileIds.includes(p.id));
 
     if (profiles.length === 0) return (
@@ -130,10 +147,8 @@ export const Dashboard = ({ setActivePage }) => {
         </div>
         <div className="ui-card-body" style={{ padding: 0 }}>
           {profiles.map((profile, index) => {
-            const profCoupons = siteCoupons.filter(c => c.profileId === profile.id);
-            const avail    = profCoupons.filter(c => c.status === 'Available').length;
-            const assigned = profCoupons.filter(c => c.status === 'Assigned').length;
-            const sold     = profCoupons.filter(c => c.status === 'Sold').length;
+            const profStock = siteStock.filter(s => s.profileId === profile.id);
+            const avail    = profStock.filter(s => s.status === 'Available').reduce((sum, s) => sum + s.count, 0);
             // Fixed capacity denominator — always "out of 1000" regardless of
             // actual current stock count, per requested display.
             const total    = 1000;
@@ -355,7 +370,6 @@ export const Dashboard = ({ setActivePage }) => {
     });
 
     const maxRevenue = Math.max(...monthData.map(m => m.revenue), 1);
-    const maxCount = Math.max(...monthData.map(m => m.count), 1);
 
     return (
       <div className="ui-card" style={{ marginTop: '1.25rem' }}>
@@ -570,7 +584,7 @@ export const Dashboard = ({ setActivePage }) => {
     const personalWallet = wallets.find(w => w.ownerId === currentUser.id && w.ownerType === 'USER_SALES');
     const collectionWallet = wallets.find(w => w.ownerId === currentUser.id && w.ownerType === 'USER_COLLECTION');
     const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
-    const availableSiteStock = coupons.filter(c => mySiteIds.includes(c.siteId) && c.status === 'Available').length;
+    const availableSiteStock = stockCounts.filter(c => mySiteIds.includes(c.siteId) && c.status === 'Available').reduce((sum, s) => sum + s.count, 0);
 
     return (
       <>
@@ -607,8 +621,8 @@ export const Dashboard = ({ setActivePage }) => {
   const renderStaffDashboard = () => {
     const personalWallet = wallets.find(w => w.ownerId === currentUser.id && w.ownerType === 'USER_SALES');
     const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
-    const availableSiteStock = coupons.filter(c => mySiteIds.includes(c.siteId) && c.status === 'Available').length;
-    const mySalesToday = coupons.filter(c => c.soldByUserId === currentUser.id && c.status === 'Sold' && c.soldAt && toDubaiDateStr(new Date(c.soldAt)) === today);
+    const availableSiteStock = stockCounts.filter(c => mySiteIds.includes(c.siteId) && c.status === 'Available').reduce((sum, s) => sum + s.count, 0);
+    const mySalesToday = salesData.filter(c => c.soldByUserId === currentUser.id && c.soldAt && toDubaiDateStr(new Date(c.soldAt)) === today);
 
     return (
       <>
@@ -764,6 +778,23 @@ export const Dashboard = ({ setActivePage }) => {
       </>
     );
   };
+
+  if (loadingSales) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', gap: '0.75rem' }}>
+        <style>{`
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+          .spin-icon {
+            animation: spin 1s linear infinite;
+          }
+        `}</style>
+        <Loader2 className="spin-icon" size={24} style={{ color: 'var(--brand-blue)' }} />
+        <span style={{ fontSize: '0.85rem', color: 'var(--text-3)' }}>Loading dashboard insights...</span>
+      </div>
+    );
+  }
 
   // Switch dashboards based on active role
   switch (currentUser.role) {
