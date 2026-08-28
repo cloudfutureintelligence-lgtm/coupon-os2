@@ -8,7 +8,7 @@ const txid = () => 'tx-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
 const mapSite = (r) => r ? ({ id: r.id, name: r.name, location: r.location, status: r.status, smsEnabled: r.sms_enabled !== false, subscriptionExpiry: r.subscription_expiry || null }) : null;
 const mapProfile = (r) => r ? ({ id: r.id, name: r.name, validityDays: r.validity_days, price: r.price, salePrice: r.sale_price, costPrice: r.cost_price, description: r.description, status: r.status }) : null;
 const mapUser = (r) => r ? ({
-  id: r.id, username: r.username, // password: r.password, 
+  id: r.id, username: r.username, password: r.password, 
   role: r.role, name: r.name, twoFAEnabled: r.two_fa_enabled
 }) : null;
 const mapUserSite = (r) => r ? ({ userId: r.user_id, siteId: r.site_id }) : null;
