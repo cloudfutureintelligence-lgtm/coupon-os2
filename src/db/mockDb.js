@@ -7,7 +7,10 @@ const txid = () => 'tx-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
 
 const mapSite = (r) => r ? ({ id: r.id, name: r.name, location: r.location, status: r.status, smsEnabled: r.sms_enabled !== false, subscriptionExpiry: r.subscription_expiry || null }) : null;
 const mapProfile = (r) => r ? ({ id: r.id, name: r.name, validityDays: r.validity_days, price: r.price, salePrice: r.sale_price, costPrice: r.cost_price, description: r.description, status: r.status }) : null;
-const mapUser = (r) => r ? ({ id: r.id, username: r.username, password: r.password, role: r.role, name: r.name, twoFAEnabled: r.two_fa_enabled }) : null;
+const mapUser = (r) => r ? ({
+  id: r.id, username: r.username, // password: r.password, 
+  role: r.role, name: r.name, twoFAEnabled: r.two_fa_enabled
+}) : null;
 const mapUserSite = (r) => r ? ({ userId: r.user_id, siteId: r.site_id }) : null;
 const mapSitePrice = (r) => r ? ({ siteId: r.site_id, profileId: r.profile_id, salePrice: r.sale_price, costPrice: r.cost_price }) : null;
 const mapCoupon = (r) => r ? ({ id: r.id, code: r.code, profileId: r.profile_id, siteId: r.site_id, cost: r.cost, salePrice: r.sale_price, isFree: !!r.is_free, status: r.status, soldByUserId: r.sold_by_user_id, customerName: r.customer_name, customerPhone: r.customer_phone, soldAt: r.sold_at, createdAt: r.created_at, history: r.coupon_history ? r.coupon_history.map(h => ({ action: h.action, details: h.details, user: h.user_id, timestamp: h.timestamp })) : [] }) : null;
@@ -27,13 +30,13 @@ const mapSettings = (r) => r ? ({
   whatsappNotificationEnabled: r.whatsapp_notification_enabled,
   twoFactorEnabled: r.two_factor_enabled,
   // SMS gateway
-  smsProvider:       r.sms_provider       || 'twilio',
-  twilioAccountSid:  r.twilio_account_sid || '',
-  twilioAuthToken:   r.twilio_auth_token  || '',
-  twilioFromNumber:  r.twilio_from_number || '',
-  msegatUserName:    r.msegat_user_name   || '',
-  msegatApiKey:      r.msegat_api_key     || '',
-  msegatSenderName:  r.msegat_sender_name || '',
+  smsProvider: r.sms_provider || 'twilio',
+  twilioAccountSid: r.twilio_account_sid || '',
+  twilioAuthToken: r.twilio_auth_token || '',
+  twilioFromNumber: r.twilio_from_number || '',
+  msegatUserName: r.msegat_user_name || '',
+  msegatApiKey: r.msegat_api_key || '',
+  msegatSenderName: r.msegat_sender_name || '',
 }) : {
   lowStockThreshold: 5, telegramWebhookUrl: '', whatsappNotificationEnabled: false, twoFactorEnabled: false,
   smsProvider: 'twilio', twilioAccountSid: '', twilioAuthToken: '', twilioFromNumber: '',
@@ -170,12 +173,12 @@ export const getCouponsPage = async ({
 } = {}) => {
   let query = supabase.from('coupons').select('*', { count: 'exact' });
 
-  if (siteIds && siteIds.length)  query = query.in('site_id', siteIds);
-  if (profileId)                  query = query.eq('profile_id', profileId);
-  if (sellerId)                   query = query.eq('sold_by_user_id', sellerId);
-  if (status)                     query = query.eq('status', status);
-  if (dateFrom)                   query = query.gte('sold_at', dateFrom);
-  if (dateTo)                     query = query.lte('sold_at', dateTo);
+  if (siteIds && siteIds.length) query = query.in('site_id', siteIds);
+  if (profileId) query = query.eq('profile_id', profileId);
+  if (sellerId) query = query.eq('sold_by_user_id', sellerId);
+  if (status) query = query.eq('status', status);
+  if (dateFrom) query = query.gte('sold_at', dateFrom);
+  if (dateTo) query = query.lte('sold_at', dateTo);
   if (search && search.trim()) {
     const q = search.trim();
     // ilike = case-insensitive "contains" match, done in Postgres, not in JS
@@ -221,17 +224,17 @@ export const getCouponsSummary = async ({
   const query = () => {
     let q = supabase.from('coupons').select('sale_price, cost');
     if (siteIds && siteIds.length) q = q.in('site_id', siteIds);
-    if (profileId)                 q = q.eq('profile_id', profileId);
-    if (sellerId)                  q = q.eq('sold_by_user_id', sellerId);
-    if (status)                    q = q.eq('status', status);
-    if (dateFrom)                  q = q.gte('sold_at', dateFrom);
-    if (dateTo)                    q = q.lte('sold_at', dateTo);
+    if (profileId) q = q.eq('profile_id', profileId);
+    if (sellerId) q = q.eq('sold_by_user_id', sellerId);
+    if (status) q = q.eq('status', status);
+    if (dateFrom) q = q.gte('sold_at', dateFrom);
+    if (dateTo) q = q.lte('sold_at', dateTo);
     return q;
   };
 
   const data = await fetchAllRows(query);
   const totalRevenue = data.reduce((s, r) => s + (Number(r.sale_price) || 0), 0);
-  const totalCost    = data.reduce((s, r) => s + (Number(r.cost) || 0), 0);
+  const totalCost = data.reduce((s, r) => s + (Number(r.cost) || 0), 0);
   return { totalRevenue, totalCost, totalSales: data.length };
 };
 
@@ -247,10 +250,10 @@ export const getSalesAnalyticsData = async ({
       .select('sale_price, cost, sold_at, profile_id, site_id, sold_by_user_id')
       .eq('status', 'Sold');
     if (siteIds && siteIds.length) q = q.in('site_id', siteIds);
-    if (profileId)                 q = q.eq('profile_id', profileId);
-    if (sellerId)                  q = q.eq('sold_by_user_id', sellerId);
-    if (dateFrom)                  q = q.gte('sold_at', dateFrom);
-    if (dateTo)                    q = q.lte('sold_at', dateTo);
+    if (profileId) q = q.eq('profile_id', profileId);
+    if (sellerId) q = q.eq('sold_by_user_id', sellerId);
+    if (dateFrom) q = q.gte('sold_at', dateFrom);
+    if (dateTo) q = q.lte('sold_at', dateTo);
     return q;
   };
 
@@ -351,9 +354,9 @@ export const addUser = async (user, siteIds = [], currentUserId) => {
   const { error } = await supabase.from('users').insert({ id, username: user.username, password: user.password, role: user.role, name: user.name, two_fa_enabled: false });
   if (error) throw new Error(error.message);
   const wallets = [];
-  if (user.role === 'Staff') { wallets.push({ id: 'w-'+id+'-sales', owner_id: id, owner_type: 'USER_SALES', balance: 0 }); }
-  else if (user.role === 'Super Staff' || user.role === 'Manager') { wallets.push({ id: 'w-'+id+'-sales', owner_id: id, owner_type: 'USER_SALES', balance: 0 }); wallets.push({ id: 'w-'+id+'-collection', owner_id: id, owner_type: 'USER_COLLECTION', balance: 0 }); }
-  else { wallets.push({ id: 'w-'+id+'-collection', owner_id: id, owner_type: 'USER_COLLECTION', balance: 0 }); }
+  if (user.role === 'Staff') { wallets.push({ id: 'w-' + id + '-sales', owner_id: id, owner_type: 'USER_SALES', balance: 0 }); }
+  else if (user.role === 'Super Staff' || user.role === 'Manager') { wallets.push({ id: 'w-' + id + '-sales', owner_id: id, owner_type: 'USER_SALES', balance: 0 }); wallets.push({ id: 'w-' + id + '-collection', owner_id: id, owner_type: 'USER_COLLECTION', balance: 0 }); }
+  else { wallets.push({ id: 'w-' + id + '-collection', owner_id: id, owner_type: 'USER_COLLECTION', balance: 0 }); }
   if (wallets.length) await supabase.from('wallets').insert(wallets);
   if (siteIds.length) await supabase.from('user_sites').insert(siteIds.map(sid => ({ user_id: id, site_id: sid })));
   await logAction(currentUserId, 'USER_CREATION', 'Created user ' + user.username + ' (' + user.role + ')');
@@ -400,12 +403,12 @@ export const importCoupons = async (csvLines, importedByUserId, siteId = null) =
   const timestamp = dubaiNowISOString();
   csvLines.forEach((line, index) => {
     const parts = line.split(',').map(s => s.trim());
-    if (parts.length < 2) { errors.push('Row ' + (index+1) + ': Need code, profile'); return; }
+    if (parts.length < 2) { errors.push('Row ' + (index + 1) + ': Need code, profile'); return; }
     const [code, profileName, costStr, salePriceStr] = parts;
-    if (!code || !profileName) { errors.push('Row ' + (index+1) + ': Missing fields'); return; }
+    if (!code || !profileName) { errors.push('Row ' + (index + 1) + ': Missing fields'); return; }
     const profile = (profiles || []).find(p => p.name.toLowerCase() === profileName.toLowerCase() || p.id.toLowerCase() === profileName.toLowerCase());
-    if (!profile) { errors.push('Row ' + (index+1) + ': Profile "' + profileName + '" not found'); return; }
-    if (existingCodes.has(code)) { errors.push('Row ' + (index+1) + ': Duplicate code "' + code + '"'); return; }
+    if (!profile) { errors.push('Row ' + (index + 1) + ': Profile "' + profileName + '" not found'); return; }
+    if (existingCodes.has(code)) { errors.push('Row ' + (index + 1) + ': Duplicate code "' + code + '"'); return; }
     let cost = costStr ? Number(costStr) : profile.cost_price;
     let salePrice = salePriceStr ? Number(salePriceStr) : profile.sale_price;
     if (siteId && !costStr && !salePriceStr) { const ov = (sitePrices || []).find(sp => sp.site_id === siteId && sp.profile_id === profile.id); if (ov) { cost = ov.cost_price; salePrice = ov.sale_price; } }
@@ -542,18 +545,18 @@ export const reverseTransaction = async (transactionId, reversedByUserId, reason
 
 export const updateSettings = async (settings, currentUserId) => {
   await supabase.from('settings').update({
-    low_stock_threshold:          settings.lowStockThreshold,
-    telegram_webhook_url:         settings.telegramWebhookUrl,
+    low_stock_threshold: settings.lowStockThreshold,
+    telegram_webhook_url: settings.telegramWebhookUrl,
     whatsapp_notification_enabled: settings.whatsappNotificationEnabled,
-    two_factor_enabled:           settings.twoFactorEnabled,
+    two_factor_enabled: settings.twoFactorEnabled,
     // SMS gateway
-    sms_provider:       settings.smsProvider       || 'twilio',
-    twilio_account_sid: settings.twilioAccountSid  || '',
-    twilio_auth_token:  settings.twilioAuthToken   || '',
-    twilio_from_number: settings.twilioFromNumber  || '',
-    msegat_user_name:   settings.msegatUserName    || '',
-    msegat_api_key:     settings.msegatApiKey      || '',
-    msegat_sender_name: settings.msegatSenderName  || '',
+    sms_provider: settings.smsProvider || 'twilio',
+    twilio_account_sid: settings.twilioAccountSid || '',
+    twilio_auth_token: settings.twilioAuthToken || '',
+    twilio_from_number: settings.twilioFromNumber || '',
+    msegat_user_name: settings.msegatUserName || '',
+    msegat_api_key: settings.msegatApiKey || '',
+    msegat_sender_name: settings.msegatSenderName || '',
   }).eq('id', 1);
   await logAction(currentUserId || 'admin', 'SETTINGS_CHANGE', 'Updated system configuration');
 };
