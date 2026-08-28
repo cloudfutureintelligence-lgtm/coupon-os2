@@ -40,12 +40,40 @@ export const AppProvider = ({ children }) => {
     }
   }, []);
 
+  // Loads just the coupons table and merges it into whatever db state is
+  // already showing, without blocking anything else. Coupons is the
+  // largest/slowest table by far, so the initial load and login check
+  // should never wait on it — the app should be usable first, with
+  // coupon-dependent numbers filling in a moment later.
+  const loadCouponsInBackground = useCallback(async () => {
+    try {
+      const coupons = await mockDb.getCoupons();
+      setDbState(prev => ({ ...prev, coupons }));
+    } catch (e) {
+      console.error('Failed to load coupons:', e);
+      showToast('Coupon data failed to load — retry from the menu if numbers look off');
+    }
+  }, []);
+
   // ── Initial load ───────────────────────────────────────────────────────────
-  // KEY FIX: load db FIRST, then restore session from it — no blank-screen window
+  // KEY FIX: load the fast "core" data FIRST (sites/users/wallets/etc — one
+  // request), show the app and validate login against that immediately, then
+  // fetch coupons separately in the background. Coupons is by far the
+  // largest/slowest table, so it must never be what the user is staring at
+  // a blank loading screen waiting for.
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      const freshDb = await refreshDbState();
+      let freshDb = null;
+      try {
+        const core = await mockDb.getDbCore();
+        freshDb = { ...core, coupons: [] };
+        setDbState(freshDb);
+      } catch (e) {
+        console.error('Failed to load DB:', e);
+        showToast('Database connection error');
+      }
+
       const savedUser = localStorage.getItem('coupon_session_user');
       if (savedUser && freshDb) {
         try {
@@ -72,6 +100,9 @@ export const AppProvider = ({ children }) => {
         }
       }
       setLoading(false);
+
+      // Fire-and-forget: fill in coupons once the app is already usable.
+      loadCouponsInBackground();
     };
     init();
   // eslint-disable-next-line react-hooks/exhaustive-deps

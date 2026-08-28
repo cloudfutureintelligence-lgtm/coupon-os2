@@ -110,12 +110,12 @@ const fetchAllCoupons = async () => {
   return all;
 };
 
-export const getDb = async () => {
-  const [{ data: bundle, error: bundleError }, couponsRaw] = await Promise.all([
-    supabase.rpc('get_full_db'),
-    fetchAllCoupons()
-  ]);
-
+// Fetch everything EXCEPT coupons — sites, profiles, users, wallets,
+// transactions, etc. all come back in the single `get_full_db` round trip.
+// This is what the app should show the UI and validate login against,
+// without waiting on the (much slower, much larger) coupons table.
+export const getDbCore = async () => {
+  const { data: bundle, error: bundleError } = await supabase.rpc('get_full_db');
   if (bundleError) throw new Error(bundleError.message);
 
   const {
@@ -124,21 +124,33 @@ export const getDb = async () => {
     settings: settingsRows, cash_collections: cashCollections
   } = bundle;
 
-  const coupons = couponsRaw.map(mapCoupon);
-
   return {
     sites: (sites || []).map(mapSite),
     couponProfiles: (profiles || []).map(mapProfile),
     users: (users || []).map(mapUser),
     userSites: (userSites || []).map(mapUserSite),
     sitePrices: (sitePrices || []).map(mapSitePrice),
-    coupons,
     wallets: (wallets || []).map(mapWallet),
     transactions: (transactions || []).map(mapTransaction),
     auditLogs: (auditLogs || []).map(mapAuditLog),
     settings: mapSettings(settingsRows?.[0]),
     cashCollections: cashCollections || []
   };
+};
+
+// Fetch just the coupons list, mapped and ready to merge into db state.
+export const getCoupons = async () => {
+  const couponsRaw = await fetchAllCoupons();
+  return couponsRaw.map(mapCoupon);
+};
+
+// Full snapshot (core + coupons together). Still used by anything that
+// needs the whole thing in one call, but the app's initial load and login
+// check should prefer getDbCore() + getCoupons() run independently so the
+// UI isn't blocked behind the slowest table.
+export const getDb = async () => {
+  const [core, coupons] = await Promise.all([getDbCore(), getCoupons()]);
+  return { ...core, coupons };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
