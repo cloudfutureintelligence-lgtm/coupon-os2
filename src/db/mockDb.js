@@ -76,34 +76,43 @@ export const getCouponHistory = async (couponId) => {
 };
 
 export const getDb = async () => {
-  // FIX: getDb() used to fire up to 10 extra parallel 1000-row queries to
-  // pull the ENTIRE coupons table (up to 10,000 rows) on every refresh —
-  // including after trivial mutations like a single sale. Those requests
-  // queue behind the browser's ~6-connections-per-host limit alongside the
-  // 10 base queries below, which is why even tiny requests (wallets, users,
-  // ~1KB payloads) were sitting "pending" for seconds.
-  //
-  // Coupons are no longer bulk-loaded here. Any screen that needs coupon
-  // data must use the scalable, server-filtered helpers below
-  // (getCouponsPage, getCouponsSummary, getStockCounts) instead of
-  // db.coupons, so refreshDbState() stays fast and constant-size no matter
-  // how large the coupons table grows.
+  const PAGE_SIZE = 1000;
+  const MAX_PAGES = 10;
+
   const [
-    { data: sites }, { data: profiles }, { data: users }, { data: userSites },
+    [{ data: sites }, { data: profiles }, { data: users }, { data: userSites },
     { data: sitePrices }, { data: wallets },
-    { data: transactions }, { data: auditLogs }, { data: settingsRows }, { data: cashCollections }
+    { data: transactions }, { data: auditLogs }, { data: settingsRows }, { data: cashCollections }],
+    ...availResults
   ] = await Promise.all([
-    supabase.from('sites').select('*').order('name'),
-    supabase.from('coupon_profiles').select('*').order('name'),
-    supabase.from('users').select('*').order('name'),
-    supabase.from('user_sites').select('*'),
-    supabase.from('site_prices').select('*'),
-    supabase.from('wallets').select('*'),
-    supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500),
-    supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
-    supabase.from('settings').select('*').limit(1),
-    supabase.from('cash_collections').select('*').order('timestamp', { ascending: false })
+    Promise.all([
+      supabase.from('sites').select('*').order('name'),
+      supabase.from('coupon_profiles').select('*').order('name'),
+      supabase.from('users').select('*').order('name'),
+      supabase.from('user_sites').select('*'),
+      supabase.from('site_prices').select('*'),
+      supabase.from('wallets').select('*'),
+      supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500),
+      supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
+      supabase.from('settings').select('*').limit(1),
+      supabase.from('cash_collections').select('*').order('timestamp', { ascending: false })
+    ]),
+    ...Array.from({ length: MAX_PAGES }, (_, i) =>
+      supabase.from('coupons')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false }) // deterministic tiebreaker — prevents rows from falling through page-boundary ties
+        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
+    )
   ]);
+
+  let couponsRaw = [];
+  for (const res of availResults) {
+    if (res.error) throw new Error(res.error.message);
+    couponsRaw = couponsRaw.concat(res.data || []);
+  }
+
+  const coupons = couponsRaw.map(mapCoupon);
 
   return {
     sites: (sites || []).map(mapSite),
@@ -111,10 +120,7 @@ export const getDb = async () => {
     users: (users || []).map(mapUser),
     userSites: (userSites || []).map(mapUserSite),
     sitePrices: (sitePrices || []).map(mapSitePrice),
-    // Deliberately NOT populated any more — use getCouponsPage /
-    // getStockCounts / getCouponsSummary instead. Kept as [] (not
-    // undefined) so any leftover `db.coupons.filter(...)` calls don't throw.
-    coupons: [],
+    coupons,
     wallets: (wallets || []).map(mapWallet),
     transactions: (transactions || []).map(mapTransaction),
     auditLogs: (auditLogs || []).map(mapAuditLog),
