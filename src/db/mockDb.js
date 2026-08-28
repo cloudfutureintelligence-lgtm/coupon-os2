@@ -75,54 +75,44 @@ export const getCouponHistory = async (couponId) => {
   }));
 };
 
-// Fetch all coupons, but adaptively: stop as soon as a page comes back
-// shorter than PAGE_SIZE instead of always firing MAX_PAGES requests
-// regardless of how many coupons actually exist. Pages are still fetched
-// with limited concurrency (not all-at-once, not fully serial) so a small
-// table finishes in one round trip and a large table doesn't fire more
-// requests than it needs.
-const fetchAllCoupons = async () => {
+export const getDb = async () => {
   const PAGE_SIZE = 1000;
-  const CONCURRENCY = 3; // how many pages to request at once per round
-  const buildPage = (i) =>
-    supabase.from('coupons')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false }) // deterministic tiebreaker — prevents rows from falling through page-boundary ties
-      .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1);
+  const MAX_PAGES = 10;
 
-  let all = [];
-  let page = 0;
-  while (true) {
-    const batch = await Promise.all(
-      Array.from({ length: CONCURRENCY }, (_, k) => buildPage(page + k))
-    );
-    let hitShortPage = false;
-    for (const res of batch) {
-      if (res.error) throw new Error(res.error.message);
-      const rows = res.data || [];
-      all = all.concat(rows);
-      if (rows.length < PAGE_SIZE) hitShortPage = true;
-    }
-    if (hitShortPage) break;
-    page += CONCURRENCY;
+  const [
+    [{ data: sites }, { data: profiles }, { data: users }, { data: userSites },
+    { data: sitePrices }, { data: wallets },
+    { data: transactions }, { data: auditLogs }, { data: settingsRows }, { data: cashCollections }],
+    ...availResults
+  ] = await Promise.all([
+    Promise.all([
+      supabase.from('sites').select('*').order('name'),
+      supabase.from('coupon_profiles').select('*').order('name'),
+      supabase.from('users').select('*').order('name'),
+      supabase.from('user_sites').select('*'),
+      supabase.from('site_prices').select('*'),
+      supabase.from('wallets').select('*'),
+      supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500),
+      supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
+      supabase.from('settings').select('*').limit(1),
+      supabase.from('cash_collections').select('*').order('timestamp', { ascending: false })
+    ]),
+    ...Array.from({ length: MAX_PAGES }, (_, i) =>
+      supabase.from('coupons')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false }) // deterministic tiebreaker — prevents rows from falling through page-boundary ties
+        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
+    )
+  ]);
+
+  let couponsRaw = [];
+  for (const res of availResults) {
+    if (res.error) throw new Error(res.error.message);
+    couponsRaw = couponsRaw.concat(res.data || []);
   }
-  return all;
-};
 
-// Fetch everything EXCEPT coupons — sites, profiles, users, wallets,
-// transactions, etc. all come back in the single `get_full_db` round trip.
-// This is what the app should show the UI and validate login against,
-// without waiting on the (much slower, much larger) coupons table.
-export const getDbCore = async () => {
-  const { data: bundle, error: bundleError } = await supabase.rpc('get_full_db');
-  if (bundleError) throw new Error(bundleError.message);
-
-  const {
-    sites, coupon_profiles: profiles, users, user_sites: userSites,
-    site_prices: sitePrices, wallets, transactions, audit_logs: auditLogs,
-    settings: settingsRows, cash_collections: cashCollections
-  } = bundle;
+  const coupons = couponsRaw.map(mapCoupon);
 
   return {
     sites: (sites || []).map(mapSite),
@@ -130,27 +120,13 @@ export const getDbCore = async () => {
     users: (users || []).map(mapUser),
     userSites: (userSites || []).map(mapUserSite),
     sitePrices: (sitePrices || []).map(mapSitePrice),
+    coupons,
     wallets: (wallets || []).map(mapWallet),
     transactions: (transactions || []).map(mapTransaction),
     auditLogs: (auditLogs || []).map(mapAuditLog),
     settings: mapSettings(settingsRows?.[0]),
     cashCollections: cashCollections || []
   };
-};
-
-// Fetch just the coupons list, mapped and ready to merge into db state.
-export const getCoupons = async () => {
-  const couponsRaw = await fetchAllCoupons();
-  return couponsRaw.map(mapCoupon);
-};
-
-// Full snapshot (core + coupons together). Still used by anything that
-// needs the whole thing in one call, but the app's initial load and login
-// check should prefer getDbCore() + getCoupons() run independently so the
-// UI isn't blocked behind the slowest table.
-export const getDb = async () => {
-  const [core, coupons] = await Promise.all([getDbCore(), getCoupons()]);
-  return { ...core, coupons };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
