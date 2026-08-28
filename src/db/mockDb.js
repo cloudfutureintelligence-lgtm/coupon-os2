@@ -111,26 +111,18 @@ const fetchAllCoupons = async () => {
 };
 
 export const getDb = async () => {
-  const [
-    [{ data: sites }, { data: profiles }, { data: users }, { data: userSites },
-    { data: sitePrices }, { data: wallets },
-    { data: transactions }, { data: auditLogs }, { data: settingsRows }, { data: cashCollections }],
-    couponsRaw
-  ] = await Promise.all([
-    Promise.all([
-      supabase.from('sites').select('*').order('name'),
-      supabase.from('coupon_profiles').select('*').order('name'),
-      supabase.from('users').select('*').order('name'),
-      supabase.from('user_sites').select('*'),
-      supabase.from('site_prices').select('*'),
-      supabase.from('wallets').select('*'),
-      supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500),
-      supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
-      supabase.from('settings').select('*').limit(1),
-      supabase.from('cash_collections').select('*').order('timestamp', { ascending: false }).limit(500)
-    ]),
+  const [{ data: bundle, error: bundleError }, couponsRaw] = await Promise.all([
+    supabase.rpc('get_full_db'),
     fetchAllCoupons()
   ]);
+
+  if (bundleError) throw new Error(bundleError.message);
+
+  const {
+    sites, coupon_profiles: profiles, users, user_sites: userSites,
+    site_prices: sitePrices, wallets, transactions, audit_logs: auditLogs,
+    settings: settingsRows, cash_collections: cashCollections
+  } = bundle;
 
   const coupons = couponsRaw.map(mapCoupon);
 
