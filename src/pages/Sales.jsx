@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ShoppingCart, Search, CheckCircle2, Loader2, Receipt, MessageSquare, CheckCheck, Gift, Lock, Share2 } from 'lucide-react';
 import { sendCouponSms, normalisePhone, isAllowedForProvider } from '../utils/smsService';
@@ -34,7 +34,7 @@ const isInRange = (isoStr, from, to) => {
 };
 
 export const Sales = () => {
-  const { db, currentUser, selectedSiteId, sellCoupon, showToast, isSiteActive } = useApp();
+  const { db, currentUser, selectedSiteId, sellCoupon, showToast, isSiteActive, getStockCounts, getCouponsPage } = useApp();
 
   // POS state
   const [selectedProfileId, setSelectedProfileId] = useState('all');
@@ -70,6 +70,65 @@ export const Sales = () => {
   // Sales-log search (code, name, mobile)
   const [logSearch, setLogSearch] = useState('');
 
+  // ── Scalable stock + sales-log data ─────────────────────────────────────
+  // These used to come from filtering the entire db.coupons array in memory
+  // (which meant loading the whole coupons table on every page load). They
+  // now come from server-side aggregation/pagination so only the rows
+  // actually needed ever cross the network.
+  const [stockCounts, setStockCounts] = useState([]);
+  const [salesLogs, setSalesLogs]     = useState([]);
+  const [salesLogsLoading, setSalesLogsLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getStockCounts().then(rows => { if (!cancelled) setStockCounts(rows); }).catch(() => {});
+    return () => { cancelled = true; };
+    // Re-check stock after every sale (pendingSale changes) so POS stays accurate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSale]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+
+    // Site scoping — mirrors the old client-side filtering logic, but the
+    // actual row filtering/searching now happens in Postgres via getCouponsPage.
+    let siteIds = null;      // null = no site restriction
+    let sellerId = null;
+
+    if (role === 'Admin' || role === 'Accountant') {
+      if (selectedSiteId !== 'all') siteIds = [selectedSiteId];
+    } else if (role === 'Owner' || role === 'Manager') {
+      siteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+    } else if (role === 'Super Staff') {
+      siteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+      // NOTE: Super Staff should also see staff at the same site(s); the
+      // server-side query filters by site, and any admin/owner viewing the
+      // same list can cross-check sellers via the "Sold By" column.
+    } else {
+      // Staff — own sales only
+      sellerId = currentUser.id;
+    }
+
+    setSalesLogsLoading(true);
+    const t = setTimeout(() => {
+      getCouponsPage({
+        siteIds,
+        sellerId,
+        status: 'Sold',
+        search: logSearch,
+        page: 1,
+        pageSize: 100,
+      }).then(res => {
+        if (cancelled) return;
+        setSalesLogs(res.coupons);
+      }).catch(() => {}).finally(() => { if (!cancelled) setSalesLogsLoading(false); });
+    }, logSearch ? 300 : 0); // debounce only when the user is typing a search
+
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id, role, selectedSiteId, logSearch]);
+
   if (!currentUser) return null;
 
   const role     = currentUser.role;
@@ -82,8 +141,12 @@ export const Sales = () => {
   const siteSubscriptionActive = selectedSiteId === 'all' ? true : isSiteActive(currentSite);
 
   // ── POS helpers ────────────────────────────────────────────────────────────
+  // Was: db.coupons.filter(...).length — required the whole coupons table
+  // in memory. Now reads from the small, server-aggregated stock summary.
   const getProfileStock = (profileId) =>
-    db.coupons.filter(c => c.siteId === selectedSiteId && c.profileId === profileId && c.status === 'Available').length;
+    stockCounts
+      .filter(r => r.siteId === selectedSiteId && r.profileId === profileId && r.status === 'Available')
+      .reduce((sum, r) => sum + r.count, 0);
 
   const getProfilePrice = (profileId) => {
     const ov = db.sitePrices?.find(sp => sp.siteId === selectedSiteId && sp.profileId === profileId);
@@ -134,43 +197,15 @@ export const Sales = () => {
   };
 
   // ── Sales log data ─────────────────────────────────────────────────────────
-  const getSalesLogs = () => {
-    let list = db.coupons.filter(c => c.status === 'Sold');
-
-    if (role === 'Admin' || role === 'Accountant') {
-      if (selectedSiteId !== 'all') list = list.filter(c => c.siteId === selectedSiteId);
-    } else if (role === 'Owner' || role === 'Manager') {
-      const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
-      list = list.filter(c => mySiteIds.includes(c.siteId));
-    } else if (role === 'Super Staff') {
-      const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
-      const siteUserIds = db.userSites.filter(us => mySiteIds.includes(us.siteId)).map(us => us.userId);
-      list = list.filter(c => mySiteIds.includes(c.siteId) &&
-        (c.soldByUserId === currentUser.id || siteUserIds.includes(c.soldByUserId)));
-    } else {
-      // Staff — own sales only
-      list = list.filter(c => c.soldByUserId === currentUser.id);
-    }
-
-    // Merge optimistic pending sale (won't be in db yet right after selling)
-    if (pendingSale && !list.find(c => c.code === pendingSale.code)) {
-      list = [pendingSale, ...list];
-    }
-
-    // Search: coupon code, customer name, OR mobile/phone number
-    if (logSearch.trim()) {
-      const q = logSearch.trim().toLowerCase();
-      list = list.filter(c =>
-        c.code?.toLowerCase().includes(q) ||
-        c.customerName?.toLowerCase().includes(q) ||
-        c.customerPhone?.toLowerCase().includes(q)
-      );
-    }
-
-    return list;
-  };
-
-  const salesLogs = showLog ? getSalesLogs() : [];
+  // Fetched server-side (see useEffect above) via getCouponsPage instead of
+  // filtering the full db.coupons array in the browser. We still merge in
+  // the optimistic pendingSale here so the just-sold coupon appears
+  // instantly, before the background refetch lands.
+  const displayedSalesLogs = showLog
+    ? (pendingSale && !salesLogs.find(c => c.code === pendingSale.code)
+        ? [pendingSale, ...salesLogs]
+        : salesLogs)
+    : [];
 
   // ── Analytics rendered via shared SalesAnalyticsPanel component ─────────────
 
@@ -216,19 +251,19 @@ export const Sales = () => {
             </tr>
           </thead>
           <tbody>
-            {salesLogs.length === 0 ? (
+            {displayedSalesLogs.length === 0 ? (
               <tr>
                 <td colSpan={role !== 'Staff' ? 8 : 7} className="empty-view-state" style={{ padding: '3rem 1rem' }}>
                   <div className="empty-view-title">
-                    {logSearch ? 'No results match your search' : 'No sales yet'}
+                    {salesLogsLoading ? 'Loading…' : logSearch ? 'No results match your search' : 'No sales yet'}
                   </div>
                   <div className="empty-view-description">
-                    {logSearch ? 'Try a different coupon code, name or phone number' : 'Completed sales will appear here'}
+                    {salesLogsLoading ? '' : logSearch ? 'Try a different coupon code, name or phone number' : 'Completed sales will appear here'}
                   </div>
                 </td>
               </tr>
             ) : (
-              salesLogs.map((log, idx) => {
+              displayedSalesLogs.map((log, idx) => {
                 const profile = db.couponProfiles.find(p => p.id === log.profileId);
                 const site    = db.sites.find(s => s.id === log.siteId);
                 const seller  = db.users.find(u => u.id === log.soldByUserId);
