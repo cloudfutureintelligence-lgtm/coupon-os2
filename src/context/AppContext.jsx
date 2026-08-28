@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as mockDb from '../db/mockDb';
 
 const AppContext = createContext();
@@ -352,37 +352,37 @@ export const AppProvider = ({ children }) => {
 
   const deleteUser = async (userId) => {
     if (!currentUser) return;
-    try { await mockDb.deleteUser(userId, currentUser.id); await refreshDbState(); showToast('User deleted'); }
+    try { await mockDb.deleteUser(userId, currentUser.id); refreshDbState(); showToast('User deleted'); }
     catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
   const unlinkUserFromSite = async (userId, siteId) => {
     if (!currentUser) return;
-    try { await mockDb.unlinkUserFromSite(userId, siteId, currentUser.id); await refreshDbState(); showToast('User unlinked'); }
+    try { await mockDb.unlinkUserFromSite(userId, siteId, currentUser.id); refreshDbState(); showToast('User unlinked'); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const linkUserToSite = async (userId, siteId) => {
     if (!currentUser) return;
-    try { await mockDb.linkUserToSite(userId, siteId, currentUser.id); await refreshDbState(); showToast('User linked to site'); }
+    try { await mockDb.linkUserToSite(userId, siteId, currentUser.id); refreshDbState(); showToast('User linked to site'); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const updateSitePrice = async (siteId, profileId, salePrice, costPrice) => {
     if (!currentUser) return;
-    try { await mockDb.updateSitePrice(siteId, profileId, salePrice, costPrice, currentUser.id); await refreshDbState(); showToast('Price updated!'); }
+    try { await mockDb.updateSitePrice(siteId, profileId, salePrice, costPrice, currentUser.id); refreshDbState(); showToast('Price updated!'); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const assignProfileToSite = async (siteId, profileId) => {
     if (!currentUser) return;
-    try { await mockDb.assignProfileToSite(siteId, profileId, currentUser.id); await refreshDbState(); showToast('Profile assigned to site'); }
+    try { await mockDb.assignProfileToSite(siteId, profileId, currentUser.id); refreshDbState(); showToast('Profile assigned to site'); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const unassignProfileFromSite = async (siteId, profileId) => {
     if (!currentUser) return;
-    try { await mockDb.unassignProfileFromSite(siteId, profileId, currentUser.id); await refreshDbState(); showToast('Profile removed from site'); }
+    try { await mockDb.unassignProfileFromSite(siteId, profileId, currentUser.id); refreshDbState(); showToast('Profile removed from site'); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
@@ -390,7 +390,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.collectCashFromStaff(currentUser.id, collectedFromUserId, amount, siteId, remarks);
-      await refreshDbState(); showToast(`Collected ${amount} AED!`); return result;
+      refreshDbState(); showToast(`Collected ${amount} AED!`); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
@@ -398,7 +398,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.collectCashFromSuperStaff(currentUser.id, collectedFromUserId, splits, remarks);
-      await refreshDbState(); showToast('Collection done!'); return result;
+      refreshDbState(); showToast('Collection done!'); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
@@ -406,7 +406,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.collectCashFromManager(currentUser.id, collectedFromUserId, amount, siteId, remarks);
-      await refreshDbState(); showToast(`Collected ${amount} AED!`); return result;
+      refreshDbState(); showToast(`Collected ${amount} AED!`); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
@@ -414,7 +414,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.collectCashFromOwner(currentUser.id, collectedFromUserId, amount, siteId, remarks);
-      await refreshDbState(); showToast(`Collected ${amount} AED!`); return result;
+      refreshDbState(); showToast(`Collected ${amount} AED!`); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
@@ -422,7 +422,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.reverseTransaction(transactionId, currentUser.id, reason);
-      await refreshDbState(); showToast('Transaction reversed!'); return result;
+      refreshDbState(); showToast('Transaction reversed!'); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
@@ -430,7 +430,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.importCoupons(csvLines, currentUser.id, siteId);
-      await refreshDbState();
+      refreshDbState();
       showToast(`Imported ${result.count} coupons${result.errors.length ? ' with warnings' : ' successfully'}.`);
       return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
@@ -438,37 +438,37 @@ export const AppProvider = ({ children }) => {
 
   const addSite = async (name, location) => {
     if (!currentUser) return;
-    try { await mockDb.addSite(name, location, currentUser.id); await refreshDbState(); showToast(`Site ${name} created`); }
+    try { await mockDb.addSite(name, location, currentUser.id); refreshDbState(); showToast(`Site ${name} created`); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const addCouponProfile = async (profile) => {
     if (!currentUser) return;
-    try { await mockDb.addCouponProfile(profile, currentUser.id); await refreshDbState(); showToast(`Profile ${profile.name} created`); }
+    try { await mockDb.addCouponProfile(profile, currentUser.id); refreshDbState(); showToast(`Profile ${profile.name} created`); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const addUser = async (user, siteIds = []) => {
     if (!currentUser) return;
-    try { await mockDb.addUser(user, siteIds, currentUser.id); await refreshDbState(); showToast(`User ${user.username} created`); }
+    try { await mockDb.addUser(user, siteIds, currentUser.id); refreshDbState(); showToast(`User ${user.username} created`); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const deleteSite = async (siteId) => {
     if (!currentUser) return;
-    try { await mockDb.deleteSite(siteId, currentUser.id); await refreshDbState(); showToast('Site deleted'); }
+    try { await mockDb.deleteSite(siteId, currentUser.id); refreshDbState(); showToast('Site deleted'); }
     catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
   const deleteCouponProfile = async (profileId) => {
     if (!currentUser) return;
-    try { await mockDb.deleteCouponProfile(profileId, currentUser.id); await refreshDbState(); showToast('Profile deleted'); }
+    try { await mockDb.deleteCouponProfile(profileId, currentUser.id); refreshDbState(); showToast('Profile deleted'); }
     catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
   const deleteCoupon = async (couponId) => {
     if (!currentUser) return;
-    try { await mockDb.deleteCoupon(couponId, currentUser.id); await refreshDbState(); showToast('Coupon deleted'); }
+    try { await mockDb.deleteCoupon(couponId, currentUser.id); refreshDbState(); showToast('Coupon deleted'); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
@@ -476,7 +476,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.bulkDeleteCoupons(couponIds, currentUser.id);
-      await refreshDbState();
+      refreshDbState();
       showToast(`Deleted ${result.count} coupons`);
       return result;
     } catch (e) { showToast(`Error: ${e.message}`); }
@@ -484,14 +484,14 @@ export const AppProvider = ({ children }) => {
 
   const walletAdjustment = async (walletId, amount, remarks) => {
     if (!currentUser) return;
-    try { await mockDb.walletAdjustment(walletId, amount, remarks, currentUser.id); await refreshDbState(); showToast(`Wallet adjusted by ${amount} AED!`); }
+    try { await mockDb.walletAdjustment(walletId, amount, remarks, currentUser.id); refreshDbState(); showToast(`Wallet adjusted by ${amount} AED!`); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const updateSettings = async (settings) => {
     try {
       await mockDb.updateSettings(settings, currentUser?.id || 'admin');
-      await refreshDbState();
+      refreshDbState();
       showToast('Settings saved');
     } catch (e) { showToast(`Error: ${e.message}`); }
   };
@@ -500,7 +500,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       await mockDb.updateSiteSmsEnabled(siteId, enabled, currentUser.id);
-      await refreshDbState();
+      refreshDbState();
       showToast(`SMS ${enabled ? 'enabled' : 'disabled'} for site`);
     } catch (e) { showToast(`Error: ${e.message}`); }
   };
@@ -510,7 +510,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       await mockDb.updateSiteSubscription(siteId, expiryIso, currentUser.id);
-      await refreshDbState();
+      refreshDbState();
       showToast(expiryIso ? 'Subscription updated' : 'Subscription expiry cleared');
     } catch (e) { showToast(`Error: ${e.message}`); }
   };
@@ -552,22 +552,33 @@ export const AppProvider = ({ children }) => {
     return await mockDb.getStockCounts();
   };
 
+  // Memoized so consumers only re-render when a value they actually use
+  // changes, instead of on every render of AppProvider (e.g. a toast firing
+  // or the search box being typed into was previously re-rendering every
+  // screen in the app, because a brand-new object was passed to the
+  // Provider on every single render).
+  const contextValue = useMemo(() => ({
+    db: dbState, currentUser, appLoading: loading, refreshDbState, loginUser, logoutUser,
+    selectedSiteId, setSelectedSiteId, getAccessibleSites,
+    searchQuery, setSearchQuery, theme, toggleTheme,
+    notifications, unreadNotifications, setUnreadNotifications,
+    toastMessage, showToast,
+    sellCoupon, updateSitePrice, assignProfileToSite, unassignProfileFromSite,
+    collectCashFromStaff, collectCashFromSuperStaff,
+    collectCashFromManager, collectCashFromOwner,
+    reverseTransaction, importCoupons, addSite, addCouponProfile, addUser,
+    deleteUser, unlinkUserFromSite, linkUserToSite, deleteSite, deleteCoupon,
+    deleteCouponProfile, bulkDeleteCoupons, getCouponHistory,
+    getCouponsPage, getCouponsSummary, getStockCounts,
+    walletAdjustment, updateSettings, updateSiteSmsEnabled, updateSiteSubscription, isSiteActive, resetDatabase
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [
+    dbState, currentUser, loading, selectedSiteId, searchQuery, theme,
+    notifications, unreadNotifications, toastMessage,
+  ]);
+
   return (
-    <AppContext.Provider value={{
-      db: dbState, currentUser, appLoading: loading, refreshDbState, loginUser, logoutUser,
-      selectedSiteId, setSelectedSiteId, getAccessibleSites,
-      searchQuery, setSearchQuery, theme, toggleTheme,
-      notifications, unreadNotifications, setUnreadNotifications,
-      toastMessage, showToast,
-      sellCoupon, updateSitePrice, assignProfileToSite, unassignProfileFromSite,
-      collectCashFromStaff, collectCashFromSuperStaff,
-      collectCashFromManager, collectCashFromOwner,
-      reverseTransaction, importCoupons, addSite, addCouponProfile, addUser,
-      deleteUser, unlinkUserFromSite, linkUserToSite, deleteSite, deleteCoupon,
-      deleteCouponProfile, bulkDeleteCoupons, getCouponHistory,
-      getCouponsPage, getCouponsSummary, getStockCounts,
-      walletAdjustment, updateSettings, updateSiteSmsEnabled, updateSiteSubscription, isSiteActive, resetDatabase
-    }}>
+    <AppContext.Provider value={contextValue}>
       {children}
     </AppContext.Provider>
   );

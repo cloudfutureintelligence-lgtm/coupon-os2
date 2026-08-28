@@ -75,44 +75,48 @@ export const getCouponHistory = async (couponId) => {
   }));
 };
 
+/**
+ * getDb() powers the general app shell (dashboards, dropdowns, small lists) —
+ * it is NOT meant to hold the full coupon table. Pages that browse/search/
+ * filter coupons must use getCouponsPage() / getCouponsSummary() / getStockCounts()
+ * below, which filter and paginate in Postgres instead of downloading everything.
+ *
+ * Previously this fetched up to 10,000 coupons (10 x 1000-row pages) and an
+ * unbounded cash_collections table on EVERY call — including after every
+ * single sale, collection, or adjustment via refreshDbState(). That's what
+ * was making both first load and everyday actions slow. It now fetches one
+ * bounded page of each, which is enough for dashboard/recent-activity views.
+ */
 export const getDb = async () => {
-  const PAGE_SIZE = 1000;
-  const MAX_PAGES = 10;
+  const RECENT_COUPONS_LIMIT = 1000;
+  const RECENT_COLLECTIONS_LIMIT = 500;
 
   const [
-    [{ data: sites }, { data: profiles }, { data: users }, { data: userSites },
-    { data: sitePrices }, { data: wallets },
-    { data: transactions }, { data: auditLogs }, { data: settingsRows }, { data: cashCollections }],
-    ...availResults
+    { data: sites }, { data: profiles }, { data: users }, { data: userSites },
+    { data: sitePrices }, { data: wallets }, { data: couponsRaw },
+    { data: transactions }, { data: auditLogs }, { data: settingsRows }, { data: cashCollections },
   ] = await Promise.all([
-    Promise.all([
-      supabase.from('sites').select('*').order('name'),
-      supabase.from('coupon_profiles').select('*').order('name'),
-      supabase.from('users').select('*').order('name'),
-      supabase.from('user_sites').select('*'),
-      supabase.from('site_prices').select('*'),
-      supabase.from('wallets').select('*'),
-      supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500),
-      supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
-      supabase.from('settings').select('*').limit(1),
-      supabase.from('cash_collections').select('*').order('timestamp', { ascending: false })
-    ]),
-    ...Array.from({ length: MAX_PAGES }, (_, i) =>
-      supabase.from('coupons')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .order('id', { ascending: false }) // deterministic tiebreaker — prevents rows from falling through page-boundary ties
-        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
-    )
+    supabase.from('sites').select('*').order('name'),
+    supabase.from('coupon_profiles').select('*').order('name'),
+    supabase.from('users').select('*').order('name'),
+    supabase.from('user_sites').select('*'),
+    supabase.from('site_prices').select('*'),
+    supabase.from('wallets').select('*'),
+    // One bounded page of the most recent coupons — dashboards only need
+    // recent activity. Anything that needs to search/browse the full table
+    // must call getCouponsPage()/getCouponsSummary() instead.
+    supabase.from('coupons')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(RECENT_COUPONS_LIMIT),
+    supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500),
+    supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
+    supabase.from('settings').select('*').limit(1),
+    supabase.from('cash_collections').select('*').order('timestamp', { ascending: false }).limit(RECENT_COLLECTIONS_LIMIT),
   ]);
 
-  let couponsRaw = [];
-  for (const res of availResults) {
-    if (res.error) throw new Error(res.error.message);
-    couponsRaw = couponsRaw.concat(res.data || []);
-  }
-
-  const coupons = couponsRaw.map(mapCoupon);
+  const coupons = (couponsRaw || []).map(mapCoupon);
 
   return {
     sites: (sites || []).map(mapSite),
