@@ -271,7 +271,10 @@ export const logAction = async (userId, action, details) => {
 
 export const findUser = async (username) => {
   const { data } = await supabase.from('users').select('*').ilike('username', username).single();
-  return mapUser(data);
+  if (!data) return null;
+  // Login still needs the password here to check it — only the general
+  // users list (mapUser, used by getDb) has password removed.
+  return { ...mapUser(data), password: data.password };
 };
 
 export const addSite = async (name, location, currentUserId) => {
