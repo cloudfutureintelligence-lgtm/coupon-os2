@@ -7,7 +7,7 @@ const txid = () => 'tx-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
 
 const mapSite = (r) => r ? ({ id: r.id, name: r.name, location: r.location, status: r.status, smsEnabled: r.sms_enabled !== false, subscriptionExpiry: r.subscription_expiry || null }) : null;
 const mapProfile = (r) => r ? ({ id: r.id, name: r.name, validityDays: r.validity_days, price: r.price, salePrice: r.sale_price, costPrice: r.cost_price, description: r.description, status: r.status }) : null;
-const mapUser = (r) => r ? ({ id: r.id, username: r.username, password: r.password, role: r.role, name: r.name, twoFAEnabled: r.two_fa_enabled }) : null;
+const mapUser = (r) => r ? ({ id: r.id, username: r.username, role: r.role, name: r.name, twoFAEnabled: r.two_fa_enabled }) : null;
 const mapUserSite = (r) => r ? ({ userId: r.user_id, siteId: r.site_id }) : null;
 const mapSitePrice = (r) => r ? ({ siteId: r.site_id, profileId: r.profile_id, salePrice: r.sale_price, costPrice: r.cost_price }) : null;
 const mapCoupon = (r) => r ? ({ id: r.id, code: r.code, profileId: r.profile_id, siteId: r.site_id, cost: r.cost, salePrice: r.sale_price, isFree: !!r.is_free, status: r.status, soldByUserId: r.sold_by_user_id, customerName: r.customer_name, customerPhone: r.customer_phone, soldAt: r.sold_at, createdAt: r.created_at, history: r.coupon_history ? r.coupon_history.map(h => ({ action: h.action, details: h.details, user: h.user_id, timestamp: h.timestamp })) : [] }) : null;
@@ -98,7 +98,7 @@ export const getDb = async () => {
   ] = await Promise.all([
     supabase.from('sites').select('*').order('name'),
     supabase.from('coupon_profiles').select('*').order('name'),
-    supabase.from('users').select('*').order('name'),
+    supabase.from('users').select('id, username, role, name, two_fa_enabled').order('name'),
     supabase.from('user_sites').select('*'),
     supabase.from('site_prices').select('*'),
     supabase.from('wallets').select('*'),
