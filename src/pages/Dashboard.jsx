@@ -1,0 +1,818 @@
+﻿import { useState, useEffect } from 'react';
+import { useApp } from '../context/AppContext';
+import { 
+  Ticket, 
+  CheckCircle2, 
+  TrendingUp, 
+  DollarSign, 
+  Wallet, 
+  MapPin, 
+  AlertTriangle,
+  Users,
+  ArrowUpRight,
+  BookOpen,
+  Loader2
+} from 'lucide-react';
+import { dubaiDateStr as toDubaiDateStr, dubaiMonthKey, formatDubaiTime } from '../utils/dateUtils';
+
+// All coupons are sold across UAE/KSA/Qatar sites but the business day boundary
+// is Dubai midnight. Comparing with the viewer's own device/browser timezone
+// (as toDateString() does) misclassifies sales made near midnight depending on
+// where the staff member happens to be logged in from — so every "today"
+// (and "this month") comparison below is anchored to Asia/Dubai instead, via
+// the shared helpers in ../utils/dateUtils.
+
+export const Dashboard = ({ setActivePage }) => {
+  const { db, stockCounts, currentUser, selectedSiteId, getSalesAnalyticsData } = useApp();
+
+  // ── Determine which sites this user can access ────────────────────────────
+  // Only Admin is truly global. Every other role (Owner, Manager, Super Owner,
+  // Accountant, Super Staff, Staff) is strictly limited to sites assigned to
+  // them via db.userSites — selecting "All Sites" in the navbar only ever
+  // aggregates THEIR OWN assigned sites, never the whole system.
+  const GLOBAL_ROLES = ['Admin'];
+  const userAccessibleSiteIds = currentUser ? (GLOBAL_ROLES.includes(currentUser.role)
+    ? db.sites.map(s => s.id)
+    : (db.userSites || []).filter(us => us.userId === currentUser.id).map(us => us.siteId)) : [];
+
+  const [salesData, setSalesData] = useState([]);
+  const [loadingSales, setLoadingSales] = useState(true);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let active = true;
+
+    const fetchAnalytics = async () => {
+      setLoadingSales(true);
+      try {
+        let siteIds = null;
+        if (currentUser.role === 'Admin') {
+          if (selectedSiteId !== 'all') siteIds = [selectedSiteId];
+        } else {
+          const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+          if (selectedSiteId !== 'all') {
+            siteIds = mySiteIds.includes(selectedSiteId) ? [selectedSiteId] : ['none'];
+          } else {
+            siteIds = mySiteIds.length > 0 ? mySiteIds : ['none'];
+          }
+        }
+        const data = await getSalesAnalyticsData({ siteIds });
+        if (active) {
+          setSalesData(data);
+        }
+      } catch (e) {
+        console.error('Failed to load sales analytics data:', e);
+      } finally {
+        if (active) setLoadingSales(false);
+      }
+    };
+
+    fetchAnalytics();
+    return () => { active = false; };
+  }, [currentUser, selectedSiteId, db.userSites, getSalesAnalyticsData]);
+
+  if (!currentUser) return null;
+
+  // Use stockCounts from context to calculate inventory counts
+  const filteredStock = stockCounts.filter(s =>
+    userAccessibleSiteIds.includes(s.siteId) &&
+    (selectedSiteId === 'all' || s.siteId === selectedSiteId)
+  );
+
+  const availableCount = filteredStock.filter(s => s.status === 'Available').reduce((sum, s) => sum + s.count, 0);
+  const assignedCount  = filteredStock.filter(s => s.status === 'Assigned').reduce((sum, s) => sum + s.count, 0);
+  const soldCount      = filteredStock.filter(s => s.status === 'Sold').reduce((sum, s) => sum + s.count, 0);
+  const expiredCount   = filteredStock.filter(s => s.status === 'Expired').reduce((sum, s) => sum + s.count, 0);
+  const totalCouponsCount = availableCount + assignedCount + soldCount + expiredCount;
+
+  // Wallet balances
+  const wallets = db.wallets;
+  // Sales data representing sold coupons for the selected scope
+  const soldCoupons = salesData;
+
+  // Revenue & Profit calculations
+  const totalRevenue = soldCoupons.reduce((sum, c) => sum + c.salePrice, 0);
+
+  // Today's Sales (Dubai calendar day, not the viewer's local device day)
+  const today = toDubaiDateStr(new Date());
+  const todaySales = soldCoupons.filter(c => c.soldAt && toDubaiDateStr(new Date(c.soldAt)) === today);
+  const todayRevenue = todaySales.reduce((sum, c) => sum + c.salePrice, 0);
+
+  // Active sites
+  const activeSitesCount = db.sites.filter(s => s.status === 'Active').length;
+
+  // Staff and wallets pending cash collections
+  // Calculate how much cash is sitting in staff wallets
+  const staffWallets = wallets.filter(w => w.ownerType === 'USER_SALES');
+  const totalPendingCollection = staffWallets.reduce((sum, w) => sum + w.balance, 0);
+
+  // ═══════════════════════════════════════════
+  // PROFILE STOCK BREAKDOWN (shown when a specific site is selected)
+  // ═══════════════════════════════════════════
+  const renderProfileStockBreakdown = () => {
+    if (selectedSiteId === 'all') return null;
+
+    const site = db.sites.find(s => s.id === selectedSiteId);
+    if (!site) return null;
+
+    // Get profiles that have any coupons at this site from stockCounts
+    const siteStock = stockCounts.filter(s => s.siteId === selectedSiteId);
+    const profileIds = [...new Set(siteStock.map(c => c.profileId))];
+    const profiles = db.couponProfiles.filter(p => profileIds.includes(p.id));
+
+    if (profiles.length === 0) return (
+      <div className="ui-card" style={{ marginBottom: '1.25rem' }}>
+        <div className="ui-card-header">
+          <span className="ui-card-title">
+            <Ticket size={14} style={{ marginRight: '0.4rem', verticalAlign: 'middle' }} />
+            Stock by Profile — {site.name}
+          </span>
+        </div>
+        <div className="empty-view-state">
+          <div className="empty-view-title">No stock found for this site</div>
+        </div>
+      </div>
+    );
+
+    return (
+      <div className="ui-card" style={{ marginBottom: '1.25rem' }}>
+        <div className="ui-card-header">
+          <span className="ui-card-title">
+            <Ticket size={14} style={{ marginRight: '0.4rem', verticalAlign: 'middle' }} />
+            Stock by Profile — {site.name}
+          </span>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>
+            {profiles.length} profile{profiles.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+        <div className="ui-card-body" style={{ padding: 0 }}>
+          {profiles.map((profile, index) => {
+            const profStock = siteStock.filter(s => s.profileId === profile.id);
+            const avail    = profStock.filter(s => s.status === 'Available').reduce((sum, s) => sum + s.count, 0);
+            // Fixed capacity denominator — always "out of 1000" regardless of
+            // actual current stock count, per requested display.
+            const total    = 1000;
+            const availPct = Math.round((avail / total) * 100);
+            const isLow    = avail > 0 && avail < (db.settings?.lowStockThreshold || 5);
+            const isEmpty  = avail === 0;
+
+            return (
+              <div
+                key={profile.id}
+                style={{
+                  padding: '0.9rem 1.25rem',
+                  borderBottom: index < profiles.length - 1 ? '1px solid var(--border)' : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '1rem',
+                  flexWrap: 'wrap',
+                }}
+              >
+                {/* Profile name + status badge */}
+                <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)' }}>
+                      {profile.name}
+                    </span>
+                    {isEmpty && (
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--red)', background: 'var(--red-light)', padding: '1px 6px', borderRadius: '99px' }}>
+                        OUT
+                      </span>
+                    )}
+                    {isLow && !isEmpty && (
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--yellow)', background: 'var(--yellow-light)', padding: '1px 6px', borderRadius: '99px' }}>
+                        LOW
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginTop: '2px' }}>
+                    {[profile.validity, profile.dataLimit].filter(Boolean).join(' · ') || 'No details'}
+                  </div>
+                </div>
+
+                {/* Available progress bar */}
+                <div style={{ flex: '2 1 140px', minWidth: '100px' }}>
+                  <div style={{ height: '6px', background: 'var(--border)', borderRadius: '99px', overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${availPct}%`,
+                      background: isEmpty ? 'var(--red)' : isLow ? 'var(--yellow)' : 'var(--green)',
+                      borderRadius: '99px',
+                      transition: 'width 0.4s',
+                    }} />
+                  </div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', marginTop: '3px' }}>
+                    {availPct}% available of {total} total
+                  </div>
+                </div>
+
+                {/* Stat chips */}
+                <div style={{ display: 'flex', gap: '1.25rem', flexShrink: 0 }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: isEmpty ? 'var(--red)' : isLow ? 'var(--yellow)' : 'var(--green)' }}>
+                      {avail}
+                    </div>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>Available</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // ═══════════════════════════════════════════
+  // STATS CARD COMPONENT
+  // ═══════════════════════════════════════════
+  const StatCard = ({ label, value, sub, icon: Icon, color, bg, trend }) => (
+    <div className="metric-card">
+      <div className="metric-header">
+        <span className="metric-label-text">{label}</span>
+        <div className="metric-icon-wrapper" style={{ background: bg, color: color }}>
+          <Icon size={14} />
+        </div>
+      </div>
+      <div className="metric-value-text">{value}</div>
+      <div className="metric-sub-detail">
+        {trend && <span className={trend.startsWith('↑') ? 'metric-trend-up' : 'metric-trend-down'}>{trend} </span>}
+        {sub}
+      </div>
+    </div>
+  );
+
+  // ═══════════════════════════════════════════
+  // 1. ADMIN DASHBOARD
+  // ═══════════════════════════════════════════
+  const renderAdminDashboard = () => {
+    // Top active staff list
+    const staffSalesMap = {};
+    soldCoupons.forEach(c => {
+      if (!staffSalesMap[c.soldByUserId]) staffSalesMap[c.soldByUserId] = 0;
+      staffSalesMap[c.soldByUserId] += c.salePrice;
+    });
+    const topStaff = Object.keys(staffSalesMap).map(sid => {
+      const uObj = db.users.find(u => u.id === sid);
+      return { name: uObj ? uObj.name : sid, role: uObj ? uObj.role : 'Staff', sales: staffSalesMap[sid] };
+    }).sort((a, b) => b.sales - a.sales).slice(0, 4);
+
+    return (
+      <>
+        <div className="page-header-row">
+          <div>
+            <h1 className="page-title-main">Enterprise Admin Dashboard</h1>
+            <p className="page-subtitle">Complete overview of distribution, inventory, and ledger across all site tenants</p>
+          </div>
+        </div>
+
+        <div className="metrics-grid">
+          <StatCard label="Available Inventory" value={availableCount} sub={`${((availableCount/totalCouponsCount)*100 || 0).toFixed(1)}% of total`} icon={CheckCircle2} color="var(--green)" bg="var(--green-light)" />
+          <StatCard label="Sold Coupons" value={soldCount} sub={`${((soldCount/totalCouponsCount)*100 || 0).toFixed(1)}% sell-out rate`} icon={TrendingUp} color="var(--purple)" bg="var(--purple-light)" />
+          <StatCard label="Today's Revenue" value={`${todayRevenue} AED`} sub={`${todaySales.length} coupon sales today`} icon={DollarSign} color="var(--green)" bg="var(--green-light)" trend="↑ 24%" />
+          <StatCard label="Outstanding in Wallets" value={`${totalPendingCollection} AED`} sub="Held by sales staff" icon={Wallet} color="var(--yellow)" bg="var(--yellow-light)" />
+          <StatCard label="Active Sites (Tenants)" value={activeSitesCount} sub="Across UAE regions" icon={MapPin} color="var(--blue)" bg="var(--blue-light)" />
+        </div>
+
+        {renderProfileStockBreakdown()}
+
+        <div className="layout-grid-columns-2">
+          {/* Revenue Chart View */}
+          <div className="ui-card">
+            <div className="ui-card-header">
+              <span className="ui-card-title">Site Revenue Split & Activity</span>
+            </div>
+            <div className="ui-card-body">
+              <div className="custom-chart-wrapper flex-align-items-center flex-justify-center">
+                <svg viewBox="0 0 100 100" style={{ width: '150px', height: '150px' }}>
+                  <circle cx="50" cy="50" r="40" fill="transparent" stroke="var(--border)" strokeWidth="15" />
+                  {/* Site A = 70%, Site B = 30% */}
+                  <circle cx="50" cy="50" r="40" fill="transparent" stroke="var(--blue)" strokeWidth="15" 
+                    strokeDasharray="251.2" strokeDashoffset="75" transform="rotate(-90 50 50)" />
+                  <circle cx="50" cy="50" r="40" fill="transparent" stroke="var(--green)" strokeWidth="15" 
+                    strokeDasharray="251.2" strokeDashoffset="210" transform="rotate(162 50 50)" />
+                </svg>
+                <div style={{ marginLeft: '2rem', fontSize: '0.82rem' }}>
+                  <div className="flex-align-items-center" style={{ gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <div style={{ width: '12px', height: '12px', background: 'var(--blue)', borderRadius: '3px' }} />
+                    <span>Site A - 75% ({totalRevenue * 0.75} AED)</span>
+                  </div>
+                  <div className="flex-align-items-center" style={{ gap: '0.5rem' }}>
+                    <div style={{ width: '12px', height: '12px', background: 'var(--green)', borderRadius: '3px' }} />
+                    <span>Site B - 25% ({totalRevenue * 0.25} AED)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Top Performance Staff */}
+          <div className="ui-card">
+            <div className="ui-card-header">
+              <span className="ui-card-title">Top Performing Sales Staff</span>
+            </div>
+            <div className="ui-card-body" style={{ padding: 0 }}>
+              {topStaff.length === 0 ? (
+                <div className="empty-view-state">
+                  <div className="empty-view-title">No sales records found</div>
+                </div>
+              ) : (
+                topStaff.map((staff, index) => (
+                  <div 
+                    key={index} 
+                    className="flex-align-items-center flex-justify-space-between" 
+                    style={{ 
+                      padding: '0.85rem 1.25rem', 
+                      borderBottom: index < topStaff.length - 1 ? '1px solid var(--border)' : 'none' 
+                    }}
+                  >
+                    <div className="flex-align-items-center" style={{ gap: '0.75rem' }}>
+                      <div className="avatar-stack-item">{staff.name[0]}</div>
+                      <div>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)' }}>{staff.name}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>{staff.role}</div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--green)' }}>
+                      {staff.sales} AED
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  // ═══════════════════════════════════════════
+  // SHARED: Monthly Sales Overview
+  // ═══════════════════════════════════════════
+  const renderMonthlySalesOverview = (filteredSoldCoupons) => {
+    // Anchor to the current month in Dubai time, not the viewer's device.
+    const [nowYear, nowMonth] = dubaiMonthKey(new Date()).split('-').map(Number);
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(Date.UTC(nowYear, nowMonth - 1 - (5 - i), 1));
+      return {
+        label: d.toLocaleString('default', { month: 'short', timeZone: 'UTC' }),
+        key: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`,
+      };
+    });
+
+    const monthData = months.map(m => {
+      const sales = filteredSoldCoupons.filter(c => c.soldAt && dubaiMonthKey(c.soldAt) === m.key);
+      return {
+        label: m.label,
+        count: sales.length,
+        revenue: sales.reduce((s, c) => s + (Number(c.salePrice) || 0), 0),
+      };
+    });
+
+    const maxRevenue = Math.max(...monthData.map(m => m.revenue), 1);
+
+    return (
+      <div className="ui-card" style={{ marginTop: '1.25rem' }}>
+        <div className="ui-card-header">
+          <span className="ui-card-title">
+            <TrendingUp size={14} style={{ marginRight: '0.4rem', verticalAlign: 'middle' }} />
+            Monthly Sales Overview
+          </span>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>Last 6 months</span>
+        </div>
+        <div className="ui-card-body">
+          {/* Bar chart */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.6rem', height: '120px', padding: '0 0.5rem 0' }}>
+            {monthData.map((m, i) => (
+              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end', gap: '4px' }}>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-3)', fontWeight: 600 }}>{m.revenue > 0 ? `${m.revenue}` : ''}</span>
+                <div
+                  title={`${m.label}: ${m.count} sold, ${m.revenue} AED`}
+                  style={{
+                    width: '100%',
+                    height: `${Math.max((m.revenue / maxRevenue) * 80, m.revenue > 0 ? 6 : 2)}px`,
+                    background: m.revenue > 0 ? 'var(--brand-blue)' : 'var(--border)',
+                    borderRadius: '4px 4px 0 0',
+                    transition: 'height 0.3s',
+                    minHeight: '2px',
+                    cursor: 'default',
+                    opacity: i === monthData.length - 1 ? 1 : 0.65 + (i * 0.07),
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          {/* Month labels */}
+          <div style={{ display: 'flex', gap: '0.6rem', padding: '0 0.5rem', marginTop: '6px' }}>
+            {monthData.map((m, i) => (
+              <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-3)', fontWeight: 600 }}>{m.label}</div>
+            ))}
+          </div>
+          {/* Summary row */}
+          <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+            {monthData.map((m, i) => (
+              <div key={i} style={{ flex: 1, minWidth: '60px', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>{m.label}</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text)' }}>{m.count}</div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--green)', fontWeight: 600 }}>{m.revenue > 0 ? `${m.revenue} AED` : '—'}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ═══════════════════════════════════════════
+  // 2. OWNER DASHBOARD
+  // ═══════════════════════════════════════════
+  const renderOwnerDashboard = (title = 'Owner Insights Dashboard') => {
+    const ownerSiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+
+    // FIX: salesData is fetched via getSalesAnalyticsData (all pages, fully paginated),
+    // ownerSoldCoupons from db.coupons was capped at 1000 rows — wrong for monthly chart + totals.
+    // salesData is already scoped to this owner's assigned sites + selectedSiteId filter (see useEffect above).
+    const ownerSoldCoupons = salesData;
+
+    const ownerTotalRevenue = ownerSoldCoupons.reduce((sum, c) => sum + (Number(c.salePrice) || 0), 0);
+
+    // Today's sales
+    const ownerTodaySales = ownerSoldCoupons.filter(c => c.soldAt && toDubaiDateStr(new Date(c.soldAt)) === today);
+    const ownerTodayRevenue = ownerTodaySales.reduce((sum, c) => sum + (Number(c.salePrice) || 0), 0);
+
+    // This month's sales (Dubai calendar month, not the viewer's device month)
+    const thisMonthKey = dubaiMonthKey(new Date());
+    const ownerMonthSales = ownerSoldCoupons.filter(c => c.soldAt && dubaiMonthKey(c.soldAt) === thisMonthKey);
+    const ownerMonthRevenue = ownerMonthSales.reduce((sum, c) => sum + (Number(c.salePrice) || 0), 0);
+
+    // Pending collections — only staff assigned to this owner's sites.
+    // totalPendingCollection (line ~76) is system-wide; we recompute locally here
+    // so Owner/Super Owner never see cash from sites they aren't assigned to.
+    const ownerSiteUserIds = new Set(
+      db.userSites.filter(us => ownerSiteIds.includes(us.siteId)).map(us => us.userId)
+    );
+    const ownerPendingCollection = wallets
+      .filter(w => w.ownerType === 'USER_SALES' && ownerSiteUserIds.has(w.ownerId))
+      .reduce((sum, w) => sum + (w.balance || 0), 0);
+
+    const siteLabelSuffix = selectedSiteId === 'all' ? 'all sites' : (db.sites.find(s => s.id === selectedSiteId)?.name || 'selected site');
+
+    return (
+      <>
+        <div className="page-header-row">
+          <div>
+            <h1 className="page-title-main">{title}</h1>
+            <p className="page-subtitle">Real-time revenue, margins, stock levels, and staff balances for assigned sites</p>
+          </div>
+        </div>
+
+        <div className="metrics-grid">
+          <StatCard label="Total Revenue" value={`${ownerTotalRevenue} AED`} sub={`Gross sales — ${siteLabelSuffix}`} icon={DollarSign} color="var(--green)" bg="var(--green-light)" />
+          <StatCard label="Today's Sales" value={`${ownerTodayRevenue} AED`} sub={`${ownerTodaySales.length} coupon${ownerTodaySales.length !== 1 ? 's' : ''} sold today`} icon={TrendingUp} color="var(--blue)" bg="var(--blue-light)" />
+          <StatCard label="This Month's Sales" value={`${ownerMonthRevenue} AED`} sub={`${ownerMonthSales.length} coupon${ownerMonthSales.length !== 1 ? 's' : ''} sold this month`} icon={ArrowUpRight} color="var(--purple)" bg="var(--purple-light)" />
+          <StatCard label="Pending Collections" value={`${ownerPendingCollection} AED`} sub="Cash sitting in assigned-site staff wallets" icon={Wallet} color="var(--yellow)" bg="var(--yellow-light)" />
+        </div>
+
+        {renderProfileStockBreakdown()}
+
+        {renderMonthlySalesOverview(ownerSoldCoupons)}
+
+        <div className="ui-card" style={{ marginTop: '1.25rem' }}>
+          <div className="ui-card-header">
+            <span className="ui-card-title">Coupon Profile Breakdown</span>
+          </div>
+          <div className="ui-card-body">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+              {db.couponProfiles.map(p => {
+                const count = ownerSoldCoupons.filter(c => c.profileId === p.id).length;
+                const rev = ownerSoldCoupons.filter(c => c.profileId === p.id).reduce((sum, c) => sum + (Number(c.salePrice) || 0), 0);
+                return (
+                  <div key={p.id} style={{ padding: '1rem', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', fontWeight: 600 }}>{p.name}</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0.25rem 0' }}>{count} Sold</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--green)', fontWeight: 600 }}>{rev} AED Revenue</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  // ═══════════════════════════════════════════
+  // 2b. SUPER OWNER DASHBOARD — same analytics view as Owner, scoped to
+  //     assigned sites only. Super Owner has no Collections/Wallet/Users
+  //     access elsewhere in the app, so this stays read-only sales insight.
+  // ═══════════════════════════════════════════
+  const renderSuperOwnerDashboard = () => renderOwnerDashboard('Super Owner Dashboard');
+
+  // ═══════════════════════════════════════════
+  // 3. MANAGER DASHBOARD
+  // ═══════════════════════════════════════════
+  const renderManagerDashboard = () => {
+    const managerSiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+    const managerSoldCoupons = db.coupons.filter(c =>
+      c.status === 'Sold' &&
+      managerSiteIds.includes(c.siteId) &&
+      (selectedSiteId === 'all' || c.siteId === selectedSiteId)
+    );
+
+    // This Month's Sales (Dubai calendar month, scoped to this manager's sites)
+    const managerThisMonthKey = dubaiMonthKey(new Date());
+    // FIX: use managerSoldCoupons (site-scoped) not soldCoupons (global/admin scope) for the month stats
+    const managerMonthSales = managerSoldCoupons.filter(c => c.soldAt && dubaiMonthKey(c.soldAt) === managerThisMonthKey);
+    const managerMonthRevenue = managerMonthSales.reduce((sum, c) => sum + (Number(c.salePrice) || 0), 0);
+
+    return (
+      <>
+        <div className="page-header-row">
+          <div>
+            <h1 className="page-title-main">Manager Station</h1>
+            <p className="page-subtitle">Track stock assignments, sales updates, and approve field activities</p>
+          </div>
+          <div className="page-actions-group">
+            <button className="action-btn btn-brand-blue" onClick={() => setActivePage('sales')}>
+              <DollarSign size={16} /> Sell Coupon
+            </button>
+          </div>
+        </div>
+
+        <div className="metrics-grid">
+          <StatCard label="Stock Available" value={availableCount} sub="Ready to be sold" icon={CheckCircle2} color="var(--green)" bg="var(--green-light)" />
+          <StatCard label="Today's Sales" value={`${todayRevenue} AED`} sub={`${todaySales.length} coupon${todaySales.length !== 1 ? 's' : ''} sold today`} icon={TrendingUp} color="var(--purple)" bg="var(--purple-light)" />
+          <StatCard label="This Month's Sales" value={`${managerMonthRevenue} AED`} sub={`${managerMonthSales.length} coupon${managerMonthSales.length !== 1 ? 's' : ''} sold this month`} icon={ArrowUpRight} color="var(--blue)" bg="var(--blue-light)" />
+          <StatCard label="Total Site Revenue" value={`${totalRevenue} AED`} sub="From site sales" icon={DollarSign} color="var(--green)" bg="var(--green-light)" />
+        </div>
+
+        {renderProfileStockBreakdown()}
+
+        {/* FIX: salesData is fetched via getSalesAnalyticsData (all pages), managerSoldCoupons is capped at 1000 rows from db.coupons */}
+        {renderMonthlySalesOverview(salesData)}
+
+        <div className="ui-card" style={{ marginTop: '1.25rem' }}>
+          <div className="ui-card-header">
+            <span className="ui-card-title">Operational Warning Signals</span>
+          </div>
+          <div className="ui-card-body">
+            {availableCount < 5 ? (
+              <div className="alert-banner alert-warning-type">
+                <AlertTriangle />
+                <div>
+                  <strong>Critical Low Stock Warning!</strong> Only {availableCount} unassigned coupons left in your local pool. Please request more stock from Admin.
+                </div>
+              </div>
+            ) : (
+              <div className="alert-banner alert-info-type">
+                <CheckCircle2 size={16} />
+                <div>
+                  <strong>All Systems Normal.</strong> Stock levels are healthy and there are no pending stock warnings for your assigned sites.
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  // ═══════════════════════════════════════════
+  // 4. SUPER STAFF DASHBOARD
+  // ═══════════════════════════════════════════
+  const renderSuperStaffDashboard = () => {
+    const personalWallet = wallets.find(w => w.ownerId === currentUser.id && w.ownerType === 'USER_SALES');
+    const collectionWallet = wallets.find(w => w.ownerId === currentUser.id && w.ownerType === 'USER_COLLECTION');
+    const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+    const availableSiteStock = stockCounts.filter(c => mySiteIds.includes(c.siteId) && c.status === 'Available').reduce((sum, s) => sum + s.count, 0);
+
+    return (
+      <>
+        <div className="page-header-row">
+          <div>
+            <h1 className="page-title-main">Super Staff Panel</h1>
+            <p className="page-subtitle">Track your stock, conduct sales, and collect money from assigned field staff</p>
+          </div>
+          <div className="page-actions-group">
+            <button className="action-btn btn-brand-blue" onClick={() => setActivePage('sales')}>
+              <DollarSign size={16} /> Sell Coupon
+            </button>
+            <button className="action-btn btn-brand-green" onClick={() => setActivePage('collections')}>
+              <Wallet size={16} /> Cash Collection
+            </button>
+          </div>
+        </div>
+
+        <div className="metrics-grid">
+          <StatCard label="Personal Sales Wallet" value={`${personalWallet?.balance || 0} AED`} sub="From your own sales" icon={Wallet} color="var(--blue)" bg="var(--blue-light)" />
+          <StatCard label="Collected Cash Wallet" value={`${collectionWallet?.balance || 0} AED`} sub="Collected from staff" icon={DollarSign} color="var(--green)" bg="var(--green-light)" />
+          <StatCard label="Site Pool Available Stock" value={availableSiteStock} sub="Ready to be sold" icon={Ticket} color="var(--purple)" bg="var(--purple-light)" />
+          <StatCard label="Active Staff" value={db.users.filter(u => u.role === 'Staff').length} sub="Under your collection" icon={Users} color="var(--blue)" bg="var(--blue-light)" />
+        </div>
+
+        {renderProfileStockBreakdown()}
+      </>
+    );
+  };
+
+  // ═══════════════════════════════════════════
+  // 5. STAFF DASHBOARD
+  // ═══════════════════════════════════════════
+  const renderStaffDashboard = () => {
+    const personalWallet = wallets.find(w => w.ownerId === currentUser.id && w.ownerType === 'USER_SALES');
+    const mySiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+    const availableSiteStock = stockCounts.filter(c => mySiteIds.includes(c.siteId) && c.status === 'Available').reduce((sum, s) => sum + s.count, 0);
+    const mySalesToday = salesData.filter(c => c.soldByUserId === currentUser.id && c.soldAt && toDubaiDateStr(new Date(c.soldAt)) === today);
+
+    return (
+      <>
+        <div className="page-header-row">
+          <div>
+            <h1 className="page-title-main">Staff Dashboard</h1>
+            <p className="page-subtitle">Access your assigned coupons inventory, activate customer sales, and track wallet balances</p>
+          </div>
+          <div className="page-actions-group">
+            <button className="action-btn btn-brand-blue" onClick={() => setActivePage('sales')}>
+              <DollarSign size={16} /> Sell Coupon
+            </button>
+          </div>
+        </div>
+
+        <div className="metrics-grid">
+          <StatCard label="My Wallet Balance" value={`${personalWallet?.balance || 0} AED`} sub="Awaiting cash collection" icon={Wallet} color="var(--green)" bg="var(--green-light)" />
+          <StatCard label="Site Pool Available Stock" value={availableSiteStock} sub="Coupons available to sell" icon={Ticket} color="var(--blue)" bg="var(--blue-light)" />
+          <StatCard label="Sales Today" value={mySalesToday.length} sub="Coupons activated today" icon={CheckCircle2} color="var(--purple)" bg="var(--purple-light)" />
+          <StatCard label="Revenue Today" value={`${mySalesToday.reduce((sum, c) => sum + c.salePrice, 0)} AED`} sub="Gross value today" icon={DollarSign} color="var(--green)" bg="var(--green-light)" />
+        </div>
+
+        {renderProfileStockBreakdown()}
+
+        <div className="ui-card">
+          <div className="ui-card-header">
+            <span className="ui-card-title">Recent Sales Feed</span>
+          </div>
+          <div className="ui-card-body" style={{ padding: 0 }}>
+            {todaySales.length === 0 ? (
+              <div className="empty-view-state">
+                <div className="empty-view-title">No sales completed today</div>
+              </div>
+            ) : (
+              todaySales.map((sale, index) => (
+                <div 
+                  key={sale.id} 
+                  className="flex-align-items-center flex-justify-space-between" 
+                  style={{ 
+                    padding: '0.85rem 1.25rem', 
+                    borderBottom: index < todaySales.length - 1 ? '1px solid var(--border)' : 'none' 
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)' }}>
+                      Code: {sale.code}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>
+                      {sale.customerName ? `Customer: ${sale.customerName}` : 'Walk-in'} • {formatDubaiTime(sale.soldAt)}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--green)' }}>
+                    +{sale.salePrice} AED
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  // ═══════════════════════════════════════════
+  // 6. ACCOUNTANT DASHBOARD
+  // ═══════════════════════════════════════════
+  const renderAccountantDashboard = () => {
+    // Accountant's own site-allocation wallets (already scoped to this user)
+    const accWallets = wallets.filter(w => w.ownerId === currentUser.id && w.ownerType === 'ACCOUNTANT_SITE');
+
+    // Assigned site IDs for this accountant
+    const accSiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
+
+    // All user IDs assigned to any of this accountant's sites
+    const accSiteUserIds = new Set(
+      db.userSites.filter(us => accSiteIds.includes(us.siteId)).map(us => us.userId)
+    );
+
+    // Helper: users of a role who are assigned to at least one of this accountant's sites
+    const siteUsersOfRole = (role) =>
+      db.users.filter(u => u.role === role && accSiteUserIds.has(u.id));
+
+    // Staff wallets (USER_SALES) — scoped to assigned sites
+    const staffIds = new Set(siteUsersOfRole('Staff').map(u => u.id));
+    const staffWalletTotal = wallets
+      .filter(w => w.ownerType === 'USER_SALES' && staffIds.has(w.ownerId))
+      .reduce((sum, w) => sum + (w.balance || 0), 0);
+
+    // Super Staff collection wallets — scoped to assigned sites
+    const superStaffSiteIds = new Set(siteUsersOfRole('Super Staff').map(u => u.id));
+    const superStaffWalletTotal = wallets
+      .filter(w => w.ownerType === 'USER_COLLECTION' && superStaffSiteIds.has(w.ownerId))
+      .reduce((sum, w) => sum + (w.balance || 0), 0);
+
+    // Manager wallets (USER_COLLECTION) — scoped to assigned sites
+    const managerIds = new Set(siteUsersOfRole('Manager').map(u => u.id));
+    const managerWalletTotal = wallets
+      .filter(w => w.ownerType === 'USER_COLLECTION' && managerIds.has(w.ownerId))
+      .reduce((sum, w) => sum + (w.balance || 0), 0);
+
+    // Owner wallets (USER_COLLECTION) — scoped to assigned sites
+    const ownerIds = new Set(siteUsersOfRole('Owner').map(u => u.id));
+    const ownerWalletTotal = wallets
+      .filter(w => w.ownerType === 'USER_COLLECTION' && ownerIds.has(w.ownerId))
+      .reduce((sum, w) => sum + (w.balance || 0), 0);
+
+    // Ledger entries scoped to assigned sites
+    const accTransactions = db.transactions.filter(t => !t.siteId || accSiteIds.includes(t.siteId));
+
+    return (
+      <>
+        <div className="page-header-row">
+          <div>
+            <h1 className="page-title-main">Treasury & Accounting Desk</h1>
+            <p className="page-subtitle">Verify cash collection allocations, reconcile double-entry ledger books, and post adjustments</p>
+          </div>
+          <div className="page-actions-group">
+            <button className="action-btn btn-brand-purple" onClick={() => setActivePage('collections')}>
+              <DollarSign size={16} /> Collect Cash from Super Staff
+            </button>
+          </div>
+        </div>
+
+        <div className="metrics-grid">
+          <StatCard label="Staff Wallets" value={`${staffWalletTotal} AED`} sub="Pending collection from Staff" icon={Wallet} color="var(--yellow)" bg="var(--yellow-light)" />
+          <StatCard label="Super Staff Wallets" value={`${superStaffWalletTotal} AED`} sub="Ready for Accountant collection" icon={Wallet} color="var(--orange, var(--yellow))" bg="var(--yellow-light)" />
+          <StatCard label="Manager Wallets" value={`${managerWalletTotal} AED`} sub="Held by Managers at your sites" icon={Wallet} color="var(--blue)" bg="var(--blue-light)" />
+          <StatCard label="Owner Wallets" value={`${ownerWalletTotal} AED`} sub="Held by Owners at your sites" icon={Wallet} color="var(--purple)" bg="var(--purple-light)" />
+          <StatCard label="Ledger Entries" value={accTransactions.length} sub="Transactions at your sites" icon={BookOpen} color="var(--blue)" bg="var(--blue-light)" />
+        </div>
+
+        <div className="ui-card">
+          <div className="ui-card-header">
+            <span className="ui-card-title">Site Allocation Cash Balances</span>
+          </div>
+          <div className="ui-card-body">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+              {accWallets.length === 0 ? (
+                <div style={{ color: 'var(--text-3)', fontSize: '0.85rem' }}>No site allocation wallets found for your assigned sites.</div>
+              ) : accWallets.map(w => {
+                const site = db.sites.find(s => s.id === w.siteId);
+                return (
+                  <div key={w.id} style={{ padding: '1rem', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', fontWeight: 600 }}>{site?.name || w.siteId} Cash Wallet</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0.25rem 0', color: 'var(--green)' }}>{w.balance} AED</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>Location: {site?.location || 'UAE'}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  if (loadingSales) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', gap: '0.75rem' }}>
+        <style>{`
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+          .spin-icon {
+            animation: spin 1s linear infinite;
+          }
+        `}</style>
+        <Loader2 className="spin-icon" size={24} style={{ color: 'var(--brand-blue)' }} />
+        <span style={{ fontSize: '0.85rem', color: 'var(--text-3)' }}>Loading dashboard insights...</span>
+      </div>
+    );
+  }
+
+  // Switch dashboards based on active role
+  switch (currentUser.role) {
+    case 'Admin':
+      return renderAdminDashboard();
+    case 'Owner':
+      return renderOwnerDashboard();
+    case 'Super Owner':
+      return renderSuperOwnerDashboard();
+    case 'Manager':
+      return renderManagerDashboard();
+    case 'Super Staff':
+      return renderSuperStaffDashboard();
+    case 'Staff':
+      return renderStaffDashboard();
+    case 'Accountant':
+      return renderAccountantDashboard();
+    default:
+      return renderStaffDashboard();
+  }
+};
