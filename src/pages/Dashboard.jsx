@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Ticket, 
@@ -56,7 +56,17 @@ export const Dashboard = ({ setActivePage }) => {
             siteIds = mySiteIds.length > 0 ? mySiteIds : ['none'];
           }
         }
-        const data = await getSalesAnalyticsData({ siteIds });
+        // Dashboard only needs the last 13 months of sales data (covers the
+        // 12-month chart + this month + today). Fetching ALL historical sales
+        // via fetchAllRows caused sequential pagination (1000 rows per HTTP
+        // round-trip to Supabase) making the dashboard visibly slow.
+        // Full historical data is still available on the Sales Analytics page.
+        const thirteenMonthsAgo = new Date();
+        thirteenMonthsAgo.setMonth(thirteenMonthsAgo.getMonth() - 13);
+        const data = await getSalesAnalyticsData({
+          siteIds,
+          dateFrom: thirteenMonthsAgo.toISOString(),
+        });
         if (active) {
           setSalesData(data);
         }
@@ -69,7 +79,13 @@ export const Dashboard = ({ setActivePage }) => {
 
     fetchAnalytics();
     return () => { active = false; };
-  }, [currentUser, selectedSiteId, db.userSites, getSalesAnalyticsData]);
+  // getSalesAnalyticsData is a stable wrapper — its function reference changes
+  // whenever dbState changes (due to useMemo in AppContext), which would cause
+  // this effect to spuriously re-fetch ALL sales after every sell/collection/
+  // adjustment. Excluding it prevents that; the effect only re-fires on actual
+  // user-driven changes (login, site switch, site assignment changes).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, selectedSiteId, db.userSites]);
 
   if (!currentUser) return null;
 

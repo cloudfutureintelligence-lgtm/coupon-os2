@@ -12,6 +12,7 @@ import { CashCollection } from './pages/CashCollection';
 import { Wallets } from './pages/Wallets';
 import { Ledger } from './pages/Ledger';
 import { Users } from './pages/Users';
+import { CashInHand } from './pages/CashInHand';
 // Heavy / rarely-visited pages — loaded on-demand only when the user navigates
 // to them. Combined with Vite's manualChunks splitting this keeps the initial
 // JS parse time low even as the app grows.
@@ -19,7 +20,6 @@ const AuditLogs      = lazy(() => import('./pages/AuditLogs').then(m => ({ defau
 const Settings       = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const ApiConsole     = lazy(() => import('./pages/ApiConsole').then(m => ({ default: m.ApiConsole })));
 const SalesAnalytics = lazy(() => import('./pages/SalesAnalytics').then(m => ({ default: m.SalesAnalytics })));
-import { CashInHand } from './pages/CashInHand';
 import { 
   Bell, 
   Moon, 
