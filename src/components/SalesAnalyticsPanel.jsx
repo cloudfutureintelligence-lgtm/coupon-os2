@@ -562,7 +562,7 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
         {siteStats
           .sort((a, b) => b.revenue - a.revenue)
-          .map(({ siteId, site, count, revenue, profit, profileMap, sellerMap }) => {
+          .map(({ siteId, site, count, revenue, profit, profileMap, sellerMap, filtered }) => {
             const profileEntries = Object.entries(profileMap).sort((a, b) => b[1] - a[1]);
             const sellerEntries  = Object.entries(sellerMap).sort((a, b) => b[1] - a[1]);
             const hasData = count > 0;

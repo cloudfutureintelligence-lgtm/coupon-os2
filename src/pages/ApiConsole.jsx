@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Terminal, Play, CheckCircle, AlertCircle } from 'lucide-react';
 
@@ -57,11 +57,12 @@ export const ApiConsole = () => {
     setTimeout(() => {
       try {
         const payload = JSON.parse(jsonPayload);
-        const dbInst = JSON.parse(localStorage.getItem('coupon_system_db'));
+        // FIX: was reading from localStorage (always null in Supabase app).
+        // Now uses `db` from context which is the live Supabase-backed state.
 
         if (activeEndpoint === 'validate') {
           if (!payload.code) throw new Error('Query parameter "code" is required');
-          const coupon = dbInst.coupons.find(c => c.code === payload.code);
+          const coupon = db.coupons.find(c => c.code === payload.code);
           if (!coupon) {
             setApiResponse({
               status: 404,
@@ -69,15 +70,15 @@ export const ApiConsole = () => {
               body: { error: 'Coupon code not registered' }
             });
           } else {
-            const profile = dbInst.couponProfiles.find(p => p.id === coupon.profileId);
+            const profile = db.couponProfiles.find(p => p.id === coupon.profileId);
             setApiResponse({
               status: 200,
               statusText: 'OK',
               body: {
                 couponCode: coupon.code,
-                serialNumber: coupon.serialNumber,
                 status: coupon.status,
                 siteId: coupon.siteId,
+                isFree: coupon.isFree,
                 profile: {
                   name: profile?.name,
                   validityDays: profile?.validityDays,
@@ -109,8 +110,8 @@ export const ApiConsole = () => {
         } else if (activeEndpoint === 'sale') {
           if (!payload.couponCode) throw new Error('Property "couponCode" is required');
 
-          const coupon = dbInst.coupons.find(c => c.code === payload.couponCode);
-          if (!coupon) throw new Error('Coupon not found');
+          const coupon = db.coupons.find(c => c.code === payload.couponCode);
+          if (!coupon) throw new Error('Coupon not found in loaded stock (note: db snapshot shows latest 1000 coupons)');
 
           // Trigger sale
           sellCoupon(coupon.id, payload.customerName, payload.customerPhone, payload.remarks);
