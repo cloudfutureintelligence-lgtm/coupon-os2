@@ -1,4 +1,4 @@
-// CouponOS — Supabase Database Engine
+﻿// CouponOS — Supabase Database Engine
 import { supabase } from './supabase';
 import { dubaiNowISOString, formatDubaiDateTime } from '../utils/dateUtils';
 
@@ -244,7 +244,7 @@ export const getSalesAnalyticsData = async ({
 } = {}) => {
   const query = () => {
     let q = supabase.from('coupons')
-      .select('sale_price, cost, sold_at, profile_id, site_id, sold_by_user_id')
+      .select('code, sale_price, cost, sold_at, profile_id, site_id, sold_by_user_id, is_free')
       .eq('status', 'Sold');
     if (siteIds && siteIds.length) q = q.in('site_id', siteIds);
     if (profileId)                 q = q.eq('profile_id', profileId);
@@ -256,12 +256,14 @@ export const getSalesAnalyticsData = async ({
 
   const data = await fetchAllRows(query);
   return data.map(r => ({
+    code: r.code,
     salePrice: Number(r.sale_price) || 0,
     cost: Number(r.cost) || 0,
     soldAt: r.sold_at,
     profileId: r.profile_id,
     siteId: r.site_id,
-    soldByUserId: r.sold_by_user_id
+    soldByUserId: r.sold_by_user_id,
+    isFree: !!r.is_free
   }));
 };
 
