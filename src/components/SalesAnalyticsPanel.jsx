@@ -137,11 +137,11 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
   const activeSites  = siteStats.filter(x => x.count > 0).length;
   const margin       = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0.0';
 
+  const allFiltered  = siteStats.flatMap(s => s.filtered);
+
   // ── Free vs Paid split ────────────────────────────────────────────────────
   const totalFreeCount = allFiltered.filter(c => c.isFree || Number(c.salePrice) === 0).length;
   const totalPaidCount = totalCount - totalFreeCount;
-
-  const allFiltered  = siteStats.flatMap(s => s.filtered);
 
   const rangeLabel = dateMode === 'today' ? 'Today'
     : dateMode === 'month' ? 'This Month'
