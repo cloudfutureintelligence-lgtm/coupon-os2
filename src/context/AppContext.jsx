@@ -61,7 +61,7 @@ export const AppProvider = ({ children }) => {
     catch (e) { console.error('_refreshWallets:', e); }
   }, [_patchDb]);
 
-  // wallets + recent transactions (cash collection, reversal)
+  // wallets + recent transactions (reversal, wallet adjustment)
   const _refreshWalletsAndTx = useCallback(async () => {
     try {
       const [wallets, transactions] = await Promise.all([
@@ -69,6 +69,18 @@ export const AppProvider = ({ children }) => {
       ]);
       _patchDb({ wallets, transactions });
     } catch (e) { console.error('_refreshWalletsAndTx:', e); }
+  }, [_patchDb]);
+
+  // wallets + transactions + cash_collections (after any collectCash* action)
+  // CashCollection.jsx reads db.cashCollections to show the collection list —
+  // without refreshing it the page shows stale data until a full reload.
+  const _refreshWalletsAndCollections = useCallback(async () => {
+    try {
+      const [wallets, transactions, cashCollections] = await Promise.all([
+        mockDb.getWallets(), mockDb.getTransactions(), mockDb.getCashCollections(),
+      ]);
+      _patchDb({ wallets, transactions, cashCollections });
+    } catch (e) { console.error('_refreshWalletsAndCollections:', e); }
   }, [_patchDb]);
 
   // wallets + stock counts (after a sale)
@@ -507,7 +519,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.collectCashFromStaff(currentUser.id, collectedFromUserId, amount, siteId, remarks);
-      _refreshWalletsAndTx(); showToast(`Collected ${amount} AED!`); return result;
+      _refreshWalletsAndCollections(); showToast(`Collected ${amount} AED!`); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
@@ -515,7 +527,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.collectCashFromSuperStaff(currentUser.id, collectedFromUserId, splits, remarks);
-      _refreshWalletsAndTx(); showToast('Collection done!'); return result;
+      _refreshWalletsAndCollections(); showToast('Collection done!'); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
@@ -523,7 +535,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.collectCashFromManager(currentUser.id, collectedFromUserId, amount, siteId, remarks);
-      _refreshWalletsAndTx(); showToast(`Collected ${amount} AED!`); return result;
+      _refreshWalletsAndCollections(); showToast(`Collected ${amount} AED!`); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
@@ -531,7 +543,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.collectCashFromOwner(currentUser.id, collectedFromUserId, amount, siteId, remarks);
-      _refreshWalletsAndTx(); showToast(`Collected ${amount} AED!`); return result;
+      _refreshWalletsAndCollections(); showToast(`Collected ${amount} AED!`); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 

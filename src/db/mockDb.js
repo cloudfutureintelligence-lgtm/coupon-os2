@@ -325,6 +325,11 @@ export const getSettings = async () => {
   return mapSettings(data?.[0]);
 };
 
+export const getCashCollections = async () => {
+  const { data } = await supabase.from('cash_collections').select('*').order('timestamp', { ascending: false }).limit(500);
+  return data || [];
+};
+
 export const addSite = async (name, location, currentUserId) => {
   const id = 'site-' + name.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now();
   const { error } = await supabase.from('sites').insert({ id, name, location, status: 'Active' });
