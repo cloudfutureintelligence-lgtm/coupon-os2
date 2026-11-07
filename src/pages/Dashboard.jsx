@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { 
   Ticket, 
@@ -429,12 +429,10 @@ export const Dashboard = ({ setActivePage }) => {
   const renderOwnerDashboard = (title = 'Owner Insights Dashboard') => {
     const ownerSiteIds = db.userSites.filter(us => us.userId === currentUser.id).map(us => us.siteId);
 
-    // Respect selected site filter
-    const ownerSoldCoupons = db.coupons.filter(c =>
-      c.status === 'Sold' &&
-      ownerSiteIds.includes(c.siteId) &&
-      (selectedSiteId === 'all' || c.siteId === selectedSiteId)
-    );
+    // FIX: salesData is fetched via getSalesAnalyticsData (all pages, fully paginated),
+    // ownerSoldCoupons from db.coupons was capped at 1000 rows — wrong for monthly chart + totals.
+    // salesData is already scoped to this owner's assigned sites + selectedSiteId filter (see useEffect above).
+    const ownerSoldCoupons = salesData;
 
     const ownerTotalRevenue = ownerSoldCoupons.reduce((sum, c) => sum + (Number(c.salePrice) || 0), 0);
 
@@ -523,7 +521,8 @@ export const Dashboard = ({ setActivePage }) => {
 
     // This Month's Sales (Dubai calendar month, scoped to this manager's sites)
     const managerThisMonthKey = dubaiMonthKey(new Date());
-    const managerMonthSales = soldCoupons.filter(c => c.soldAt && dubaiMonthKey(c.soldAt) === managerThisMonthKey);
+    // FIX: use managerSoldCoupons (site-scoped) not soldCoupons (global/admin scope) for the month stats
+    const managerMonthSales = managerSoldCoupons.filter(c => c.soldAt && dubaiMonthKey(c.soldAt) === managerThisMonthKey);
     const managerMonthRevenue = managerMonthSales.reduce((sum, c) => sum + (Number(c.salePrice) || 0), 0);
 
     return (
@@ -549,7 +548,8 @@ export const Dashboard = ({ setActivePage }) => {
 
         {renderProfileStockBreakdown()}
 
-        {renderMonthlySalesOverview(managerSoldCoupons)}
+        {/* FIX: salesData is fetched via getSalesAnalyticsData (all pages), managerSoldCoupons is capped at 1000 rows from db.coupons */}
+        {renderMonthlySalesOverview(salesData)}
 
         <div className="ui-card" style={{ marginTop: '1.25rem' }}>
           <div className="ui-card-header">

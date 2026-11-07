@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Wallet, Search, Filter, Plus, ArrowRightLeft } from 'lucide-react';
-import { dubaiNowISOString } from '../utils/dateUtils';
 
 export const Wallets = () => {
-  const { db, currentUser, showToast } = useApp();
+  const { db, currentUser, showToast, walletAdjustment } = useApp();
   const [walletSearch, setWalletSearch] = useState('');
 
   // Adjustment states
@@ -48,47 +47,26 @@ export const Wallets = () => {
 
   const filteredWallets = getFilteredWallets();
 
-  // Admin Adjustment Submit
-  const handleAdjustmentSubmit = (e) => {
+  // Admin Adjustment Submit — calls Supabase-backed walletAdjustment (fixes stale localStorage bug)
+  const handleAdjustmentSubmit = async (e) => {
     e.preventDefault();
     if (!targetWalletId || !adjustAmount) {
       showToast('All adjustment fields required');
       return;
     }
-
     const amt = Number(adjustAmount);
-    if (isNaN(amt)) {
-      showToast('Enter valid amount');
+    if (isNaN(amt) || amt === 0) {
+      showToast('Enter a valid non-zero amount');
       return;
     }
-
-    const dbInst = JSON.parse(localStorage.getItem('coupon_system_db'));
-    const wallet = dbInst.wallets.find(w => w.id === targetWalletId);
-    if (!wallet) {
-      showToast('Wallet not found');
-      return;
+    try {
+      await walletAdjustment(targetWalletId, amt, adjustRemarks || ('Admin balance adjustment of ' + amt + ' AED'));
+      setTargetWalletId('');
+      setAdjustAmount('');
+      setAdjustRemarks('');
+    } catch (err) {
+      showToast('Adjustment failed: ' + err.message);
     }
-
-    // Adjust balance (can be positive or negative)
-    wallet.balance += amt;
-
-    // Log ledger entry
-    const txId = 'tx-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
-    dbInst.transactions.unshift({
-      id: txId,
-      fromWalletId: amt >= 0 ? 'w-system' : targetWalletId,
-      toWalletId: amt >= 0 ? targetWalletId : 'w-system',
-      amount: Math.abs(amt),
-      type: 'ADJUSTMENT',
-      timestamp: dubaiNowISOString(),
-      remarks: adjustRemarks || `Admin balance adjustment of ${amt} AED`,
-      createdByUserId: currentUser.id
-    });
-
-    // Save & Refresh
-    localStorage.setItem('coupon_system_db', JSON.stringify(dbInst));
-    showToast(`Wallet adjusted by ${amt} AED!`);
-    window.location.reload();
   };
 
   return (
