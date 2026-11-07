@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
 import { useApp } from './context/AppContext';
 import { Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
@@ -12,11 +12,14 @@ import { CashCollection } from './pages/CashCollection';
 import { Wallets } from './pages/Wallets';
 import { Ledger } from './pages/Ledger';
 import { Users } from './pages/Users';
-import { AuditLogs } from './pages/AuditLogs';
-import { Settings } from './pages/Settings';
-import { ApiConsole } from './pages/ApiConsole';
+// Heavy / rarely-visited pages — loaded on-demand only when the user navigates
+// to them. Combined with Vite's manualChunks splitting this keeps the initial
+// JS parse time low even as the app grows.
+const AuditLogs      = lazy(() => import('./pages/AuditLogs').then(m => ({ default: m.AuditLogs })));
+const Settings       = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
+const ApiConsole     = lazy(() => import('./pages/ApiConsole').then(m => ({ default: m.ApiConsole })));
+const SalesAnalytics = lazy(() => import('./pages/SalesAnalytics').then(m => ({ default: m.SalesAnalytics })));
 import { CashInHand } from './pages/CashInHand';
-import { SalesAnalytics } from './pages/SalesAnalytics';
 import { 
   Bell, 
   Moon, 
@@ -189,7 +192,15 @@ export const App = () => {
 
         {/* Content Pane */}
         <main id="content-pane">
-          {renderActivePage()}
+          <Suspense fallback={
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: '1rem', color: 'var(--text-3)' }}>
+              <div style={{ width: 28, height: 28, border: '3px solid var(--border)', borderTop: '3px solid var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              <span style={{ fontSize: 13 }}>Loading…</span>
+            </div>
+          }>
+            {renderActivePage()}
+          </Suspense>
         </main>
       </div>
 

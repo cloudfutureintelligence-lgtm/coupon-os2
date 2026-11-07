@@ -1,4 +1,4 @@
-﻿// CouponOS — Supabase Database Engine
+// CouponOS — Supabase Database Engine
 import { supabase } from './supabase';
 import { dubaiNowISOString, formatDubaiDateTime } from '../utils/dateUtils';
 
@@ -277,6 +277,52 @@ export const findUser = async (username) => {
   // Login still needs the password here to check it — only the general
   // users list (mapUser, used by getDb) has password removed.
   return { ...mapUser(data), password: data.password };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TARGETED REFRESH HELPERS — fetch only specific tables after a write operation.
+// Using these instead of getDb() after mutations cuts post-action Supabase
+// round-trips from 11+ queries down to 1–3, eliminating the visible lag.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const getWallets = async () => {
+  const { data } = await supabase.from('wallets').select('*');
+  return (data || []).map(mapWallet);
+};
+
+export const getTransactions = async () => {
+  const { data } = await supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(500);
+  return (data || []).map(mapTransaction);
+};
+
+export const getSites = async () => {
+  const { data } = await supabase.from('sites').select('*').order('name');
+  return (data || []).map(mapSite);
+};
+
+export const getSitePrices = async () => {
+  const { data } = await supabase.from('site_prices').select('*');
+  return (data || []).map(mapSitePrice);
+};
+
+export const getUsers = async () => {
+  const { data } = await supabase.from('users').select('id, username, role, name, two_fa_enabled').order('name');
+  return (data || []).map(mapUser);
+};
+
+export const getUserSites = async () => {
+  const { data } = await supabase.from('user_sites').select('*');
+  return (data || []).map(mapUserSite);
+};
+
+export const getCouponProfiles = async () => {
+  const { data } = await supabase.from('coupon_profiles').select('*').order('name');
+  return (data || []).map(mapProfile);
+};
+
+export const getSettings = async () => {
+  const { data } = await supabase.from('settings').select('*').limit(1);
+  return mapSettings(data?.[0]);
 };
 
 export const addSite = async (name, location, currentUserId) => {

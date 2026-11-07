@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as mockDb from '../db/mockDb';
+import { supabase } from '../db/supabase';
 
 const AppContext = createContext();
 
@@ -45,24 +46,134 @@ export const AppProvider = ({ children }) => {
     }
   }, []);
 
+  // ── Targeted refresh helpers — only re-fetch the table(s) that changed ────
+  // These replace refreshDbState() after write operations so we stop
+  // re-downloading all 11 tables when only 1–2 actually changed.
+  // Pattern: setDbState(prev => ({ ...prev, ...patch })) merges in just the
+  // updated slices without touching any other cached table.
+
+  const _patchDb = useCallback((patch) =>
+    setDbState(prev => ({ ...prev, ...patch })), []);
+
+  // wallets only (wallet adjustment)
+  const _refreshWallets = useCallback(async () => {
+    try { _patchDb({ wallets: await mockDb.getWallets() }); }
+    catch (e) { console.error('_refreshWallets:', e); }
+  }, [_patchDb]);
+
+  // wallets + recent transactions (cash collection, reversal)
+  const _refreshWalletsAndTx = useCallback(async () => {
+    try {
+      const [wallets, transactions] = await Promise.all([
+        mockDb.getWallets(), mockDb.getTransactions(),
+      ]);
+      _patchDb({ wallets, transactions });
+    } catch (e) { console.error('_refreshWalletsAndTx:', e); }
+  }, [_patchDb]);
+
+  // wallets + stock counts (after a sale)
+  const _refreshWalletsAndStock = useCallback(async () => {
+    try {
+      const [wallets, sc] = await Promise.all([
+        mockDb.getWallets(), mockDb.getStockCounts(),
+      ]);
+      _patchDb({ wallets });
+      setStockCounts(sc);
+    } catch (e) { console.error('_refreshWalletsAndStock:', e); }
+  }, [_patchDb]);
+
+  // site_prices only (price update / profile assign/unassign)
+  const _refreshSitePrices = useCallback(async () => {
+    try { _patchDb({ sitePrices: await mockDb.getSitePrices() }); }
+    catch (e) { console.error('_refreshSitePrices:', e); }
+  }, [_patchDb]);
+
+  // sites only (SMS toggle, subscription change)
+  const _refreshSites = useCallback(async () => {
+    try { _patchDb({ sites: await mockDb.getSites() }); }
+    catch (e) { console.error('_refreshSites:', e); }
+  }, [_patchDb]);
+
+  // sites + user_sites (add/delete site)
+  const _refreshSitesAndUserSites = useCallback(async () => {
+    try {
+      const [sites, userSites] = await Promise.all([
+        mockDb.getSites(), mockDb.getUserSites(),
+      ]);
+      _patchDb({ sites, userSites });
+    } catch (e) { console.error('_refreshSitesAndUserSites:', e); }
+  }, [_patchDb]);
+
+  // user_sites only (link/unlink user from site)
+  const _refreshUserSites = useCallback(async () => {
+    try { _patchDb({ userSites: await mockDb.getUserSites() }); }
+    catch (e) { console.error('_refreshUserSites:', e); }
+  }, [_patchDb]);
+
+  // users + user_sites + wallets (add/delete user)
+  const _refreshUsersAndWallets = useCallback(async () => {
+    try {
+      const [users, userSites, wallets] = await Promise.all([
+        mockDb.getUsers(), mockDb.getUserSites(), mockDb.getWallets(),
+      ]);
+      _patchDb({ users, userSites, wallets });
+    } catch (e) { console.error('_refreshUsersAndWallets:', e); }
+  }, [_patchDb]);
+
+  // coupon_profiles + site_prices (add/delete profile)
+  const _refreshProfilesAndPrices = useCallback(async () => {
+    try {
+      const [couponProfiles, sitePrices] = await Promise.all([
+        mockDb.getCouponProfiles(), mockDb.getSitePrices(),
+      ]);
+      _patchDb({ couponProfiles, sitePrices });
+    } catch (e) { console.error('_refreshProfilesAndPrices:', e); }
+  }, [_patchDb]);
+
+  // settings only
+  const _refreshSettings = useCallback(async () => {
+    try { _patchDb({ settings: await mockDb.getSettings() }); }
+    catch (e) { console.error('_refreshSettings:', e); }
+  }, [_patchDb]);
+
+  // stock counts only (import/delete coupons)
+  const _refreshStock = useCallback(async () => {
+    try { setStockCounts(await mockDb.getStockCounts()); }
+    catch (e) { console.error('_refreshStock:', e); }
+  }, []);
+
   // ── Initial load ───────────────────────────────────────────────────────────
   // KEY FIX: load db FIRST, then restore session from it — no blank-screen window
   useEffect(() => {
     const init = async () => {
       setLoading(true);
+
+      // ── Keep-alive ping (Free plan guard) ─────────────────────────────────
+      // Supabase Free/Nano projects pause after 7 days of inactivity, causing a
+      // 20–30 s cold-start delay on the FIRST real query. Fire a cheap 1-row
+      // ping here so that delay is absorbed during the loading spinner rather
+      // than hanging the app silently after the user logs in.
+      // The ping is fire-and-forget; errors are ignored — getDb() below is
+      // the authoritative load and handles its own errors.
+      supabase.from('settings').select('id').limit(1).then(() => {}).catch(() => {});
+
       const freshDb = await refreshDbState();
       const savedUser = localStorage.getItem('coupon_session_user');
       if (savedUser && freshDb) {
         try {
           const parsed = JSON.parse(savedUser);
-          // Validate against the freshly loaded db users list (no extra round-trip)
-          const user = await mockDb.findUser(parsed.username);
-          if (user && user.password === parsed.password) {
-            setCurrentUser(user);
+          // Validate using the freshly loaded db users list — no extra Supabase round-trip.
+          // parsed already contains the full user object (incl. password) written at login.
+          // We verify the user still exists in the DB (guards against deleted accounts).
+          const userStillExists = (freshDb.users || []).find(
+            u => u.id === parsed.id && u.username === parsed.username
+          );
+          if (userStillExists && parsed.id) {
+            setCurrentUser(parsed);
             // Ensure selectedSiteId is valid for this user
-            if (!GLOBAL_ROLES.includes(user.role)) {
+            if (!GLOBAL_ROLES.includes(parsed.role)) {
               const assignedSites = (freshDb.userSites || [])
-                .filter(us => us.userId === user.id)
+                .filter(us => us.userId === parsed.id)
                 .map(us => us.siteId);
               if (assignedSites.length > 0) setSelectedSiteId(assignedSites[0]);
               else setSelectedSiteId('none');
@@ -339,7 +450,8 @@ export const AppProvider = ({ children }) => {
       localStorage.removeItem('coupon_session_user');
       setCurrentUser(null);
       setSelectedSiteId('all');
-      await refreshDbState();
+      // No DB refresh on logout — there is no one to show the data to.
+      // The next login already calls refreshDbState() as its first step.
     }
   };
 
@@ -348,8 +460,8 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.sellCoupon(siteId, profileId, currentUser.id, customerName, customerPhone, remarks, isFree);
-      // Refresh in background — UI uses optimistic pendingSale so user sees result immediately
-      refreshDbState();
+      // Refresh wallets + stock in background — UI uses optimistic pendingSale so user sees result immediately
+      _refreshWalletsAndStock();
       showToast(isFree ? 'Free coupon issued successfully!' : 'Coupon sold successfully!');
       return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
@@ -357,37 +469,37 @@ export const AppProvider = ({ children }) => {
 
   const deleteUser = async (userId) => {
     if (!currentUser) return;
-    try { await mockDb.deleteUser(userId, currentUser.id); refreshDbState(); showToast('User deleted'); }
+    try { await mockDb.deleteUser(userId, currentUser.id); _refreshUsersAndWallets(); showToast('User deleted'); }
     catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
   const unlinkUserFromSite = async (userId, siteId) => {
     if (!currentUser) return;
-    try { await mockDb.unlinkUserFromSite(userId, siteId, currentUser.id); refreshDbState(); showToast('User unlinked'); }
+    try { await mockDb.unlinkUserFromSite(userId, siteId, currentUser.id); _refreshUserSites(); showToast('User unlinked'); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const linkUserToSite = async (userId, siteId) => {
     if (!currentUser) return;
-    try { await mockDb.linkUserToSite(userId, siteId, currentUser.id); refreshDbState(); showToast('User linked to site'); }
+    try { await mockDb.linkUserToSite(userId, siteId, currentUser.id); _refreshUserSites(); showToast('User linked to site'); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const updateSitePrice = async (siteId, profileId, salePrice, costPrice) => {
     if (!currentUser) return;
-    try { await mockDb.updateSitePrice(siteId, profileId, salePrice, costPrice, currentUser.id); refreshDbState(); showToast('Price updated!'); }
+    try { await mockDb.updateSitePrice(siteId, profileId, salePrice, costPrice, currentUser.id); _refreshSitePrices(); showToast('Price updated!'); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const assignProfileToSite = async (siteId, profileId) => {
     if (!currentUser) return;
-    try { await mockDb.assignProfileToSite(siteId, profileId, currentUser.id); refreshDbState(); showToast('Profile assigned to site'); }
+    try { await mockDb.assignProfileToSite(siteId, profileId, currentUser.id); _refreshSitePrices(); showToast('Profile assigned to site'); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const unassignProfileFromSite = async (siteId, profileId) => {
     if (!currentUser) return;
-    try { await mockDb.unassignProfileFromSite(siteId, profileId, currentUser.id); refreshDbState(); showToast('Profile removed from site'); }
+    try { await mockDb.unassignProfileFromSite(siteId, profileId, currentUser.id); _refreshSitePrices(); showToast('Profile removed from site'); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
@@ -395,7 +507,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.collectCashFromStaff(currentUser.id, collectedFromUserId, amount, siteId, remarks);
-      refreshDbState(); showToast(`Collected ${amount} AED!`); return result;
+      _refreshWalletsAndTx(); showToast(`Collected ${amount} AED!`); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
@@ -403,7 +515,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.collectCashFromSuperStaff(currentUser.id, collectedFromUserId, splits, remarks);
-      refreshDbState(); showToast('Collection done!'); return result;
+      _refreshWalletsAndTx(); showToast('Collection done!'); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
@@ -411,7 +523,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.collectCashFromManager(currentUser.id, collectedFromUserId, amount, siteId, remarks);
-      refreshDbState(); showToast(`Collected ${amount} AED!`); return result;
+      _refreshWalletsAndTx(); showToast(`Collected ${amount} AED!`); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
@@ -419,7 +531,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.collectCashFromOwner(currentUser.id, collectedFromUserId, amount, siteId, remarks);
-      refreshDbState(); showToast(`Collected ${amount} AED!`); return result;
+      _refreshWalletsAndTx(); showToast(`Collected ${amount} AED!`); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
@@ -427,7 +539,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.reverseTransaction(transactionId, currentUser.id, reason);
-      refreshDbState(); showToast('Transaction reversed!'); return result;
+      _refreshWalletsAndTx(); showToast('Transaction reversed!'); return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
@@ -435,7 +547,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.importCoupons(csvLines, currentUser.id, siteId);
-      refreshDbState();
+      _refreshStock();
       showToast(`Imported ${result.count} coupons${result.errors.length ? ' with warnings' : ' successfully'}.`);
       return result;
     } catch (e) { showToast(`Error: ${e.message}`); throw e; }
@@ -443,37 +555,37 @@ export const AppProvider = ({ children }) => {
 
   const addSite = async (name, location) => {
     if (!currentUser) return;
-    try { await mockDb.addSite(name, location, currentUser.id); refreshDbState(); showToast(`Site ${name} created`); }
+    try { await mockDb.addSite(name, location, currentUser.id); _refreshSitesAndUserSites(); showToast(`Site ${name} created`); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const addCouponProfile = async (profile) => {
     if (!currentUser) return;
-    try { await mockDb.addCouponProfile(profile, currentUser.id); refreshDbState(); showToast(`Profile ${profile.name} created`); }
+    try { await mockDb.addCouponProfile(profile, currentUser.id); _refreshProfilesAndPrices(); showToast(`Profile ${profile.name} created`); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const addUser = async (user, siteIds = []) => {
     if (!currentUser) return;
-    try { await mockDb.addUser(user, siteIds, currentUser.id); refreshDbState(); showToast(`User ${user.username} created`); }
+    try { await mockDb.addUser(user, siteIds, currentUser.id); _refreshUsersAndWallets(); showToast(`User ${user.username} created`); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const deleteSite = async (siteId) => {
     if (!currentUser) return;
-    try { await mockDb.deleteSite(siteId, currentUser.id); refreshDbState(); showToast('Site deleted'); }
+    try { await mockDb.deleteSite(siteId, currentUser.id); _refreshSitesAndUserSites(); showToast('Site deleted'); }
     catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
   const deleteCouponProfile = async (profileId) => {
     if (!currentUser) return;
-    try { await mockDb.deleteCouponProfile(profileId, currentUser.id); refreshDbState(); showToast('Profile deleted'); }
+    try { await mockDb.deleteCouponProfile(profileId, currentUser.id); _refreshProfilesAndPrices(); showToast('Profile deleted'); }
     catch (e) { showToast(`Error: ${e.message}`); throw e; }
   };
 
   const deleteCoupon = async (couponId) => {
     if (!currentUser) return;
-    try { await mockDb.deleteCoupon(couponId, currentUser.id); refreshDbState(); showToast('Coupon deleted'); }
+    try { await mockDb.deleteCoupon(couponId, currentUser.id); _refreshStock(); showToast('Coupon deleted'); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
@@ -481,7 +593,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       const result = await mockDb.bulkDeleteCoupons(couponIds, currentUser.id);
-      refreshDbState();
+      _refreshStock();
       showToast(`Deleted ${result.count} coupons`);
       return result;
     } catch (e) { showToast(`Error: ${e.message}`); }
@@ -489,14 +601,14 @@ export const AppProvider = ({ children }) => {
 
   const walletAdjustment = async (walletId, amount, remarks) => {
     if (!currentUser) return;
-    try { await mockDb.walletAdjustment(walletId, amount, remarks, currentUser.id); refreshDbState(); showToast(`Wallet adjusted by ${amount} AED!`); }
+    try { await mockDb.walletAdjustment(walletId, amount, remarks, currentUser.id); _refreshWalletsAndTx(); showToast(`Wallet adjusted by ${amount} AED!`); }
     catch (e) { showToast(`Error: ${e.message}`); }
   };
 
   const updateSettings = async (settings) => {
     try {
       await mockDb.updateSettings(settings, currentUser?.id || 'admin');
-      refreshDbState();
+      _refreshSettings();
       showToast('Settings saved');
     } catch (e) { showToast(`Error: ${e.message}`); }
   };
@@ -505,7 +617,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       await mockDb.updateSiteSmsEnabled(siteId, enabled, currentUser.id);
-      refreshDbState();
+      _refreshSites();
       showToast(`SMS ${enabled ? 'enabled' : 'disabled'} for site`);
     } catch (e) { showToast(`Error: ${e.message}`); }
   };
@@ -515,7 +627,7 @@ export const AppProvider = ({ children }) => {
     if (!currentUser) return;
     try {
       await mockDb.updateSiteSubscription(siteId, expiryIso, currentUser.id);
-      refreshDbState();
+      _refreshSites();
       showToast(expiryIso ? 'Subscription updated' : 'Subscription expiry cleared');
     } catch (e) { showToast(`Error: ${e.message}`); }
   };
