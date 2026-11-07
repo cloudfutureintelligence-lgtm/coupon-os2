@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { BarChart2, Calendar, Download, Printer, Filter, Loader2 } from 'lucide-react';
 import { dubaiDateStr as toDateStr, dubaiStartOfDay, dubaiEndOfDay, formatDubaiDateTime } from '../utils/dateUtils';
@@ -137,6 +137,10 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
   const activeSites  = siteStats.filter(x => x.count > 0).length;
   const margin       = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0.0';
 
+  // ── Free vs Paid split ────────────────────────────────────────────────────
+  const totalFreeCount = allFiltered.filter(c => c.isFree || Number(c.salePrice) === 0).length;
+  const totalPaidCount = totalCount - totalFreeCount;
+
   const allFiltered  = siteStats.flatMap(s => s.filtered);
 
   const rangeLabel = dateMode === 'today' ? 'Today'
@@ -156,10 +160,13 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
   const profileTotals = {};
   allFiltered.forEach(c => {
     if (!profileTotals[c.profileId]) {
-      profileTotals[c.profileId] = { count: 0, revenue: 0 };
+      profileTotals[c.profileId] = { count: 0, freeCount: 0, paidCount: 0, revenue: 0 };
     }
+    const isFree = c.isFree || Number(c.salePrice) === 0;
     profileTotals[c.profileId].count   += 1;
     profileTotals[c.profileId].revenue += Number(c.salePrice) || 0;
+    if (isFree) profileTotals[c.profileId].freeCount += 1;
+    else        profileTotals[c.profileId].paidCount  += 1;
   });
 
   const salesByProfile = Object.entries(profileTotals)
@@ -169,6 +176,8 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
         profileId,
         name: prof?.name || profileId,
         count: data.count,
+        paidCount: data.paidCount,
+        freeCount: data.freeCount,
         revenue: data.revenue,
         sharePercent: totalRevenue > 0 ? ((data.revenue / totalRevenue) * 100).toFixed(1) : '0.0',
       };
@@ -364,7 +373,11 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
           <div style={{ ...summaryCardStyle, borderLeft: '3px solid var(--blue)' }}>
             <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Total Sales</div>
             <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text)' }}>{totalCount}</div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-3)' }}>coupons sold</div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-3)', marginTop: '0.2rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ color: 'var(--blue)', fontWeight: 600 }}>{totalPaidCount} paid</span>
+              <span style={{ color: 'var(--text-3)' }}>·</span>
+              <span style={{ color: 'var(--yellow)', fontWeight: 600 }}>{totalFreeCount} free</span>
+            </div>
           </div>
           <div style={{ ...summaryCardStyle, borderLeft: '3px solid var(--green)' }}>
             <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Total Revenue</div>
@@ -418,7 +431,8 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
                 <thead>
                   <tr>
                     <th style={tableHeaderStyle}>Site</th>
-                    <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Coupons</th>
+                    <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Paid</th>
+                    <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Free</th>
                     <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Revenue</th>
                     {role !== 'Manager' && role !== 'Owner' && (
                       <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Profit</th>
@@ -436,7 +450,10 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
                         )}
                       </td>
                       <td style={{ ...tableCellStyle, textAlign: 'right' }}>
-                        <span className="pill-badge badge-info">{s.count}</span>
+                        {(() => { const paid = s.filtered.filter(c => !c.isFree && Number(c.salePrice) > 0).length; return <span className="pill-badge badge-info">{paid}</span>; })()}
+                      </td>
+                      <td style={{ ...tableCellStyle, textAlign: 'right' }}>
+                        {(() => { const free = s.filtered.filter(c => c.isFree || Number(c.salePrice) === 0).length; return free > 0 ? <span className="pill-badge badge-warning">{free}</span> : <span style={{ color: 'var(--text-3)', fontSize: '0.75rem' }}>—</span>; })()}
                       </td>
                       <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 700, color: 'var(--green)' }}>
                         {s.revenue.toLocaleString()} AED
@@ -461,7 +478,8 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
                   <tfoot>
                     <tr style={{ background: 'var(--surface-2)' }}>
                       <td style={{ ...tableCellStyle, fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-2)' }}>Total</td>
-                      <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 800 }}>{totalCount}</td>
+                      <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 800 }}>{totalPaidCount}</td>
+                      <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 800, color: 'var(--yellow)' }}>{totalFreeCount}</td>
                       <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 800, color: 'var(--green)' }}>{totalRevenue.toLocaleString()} AED</td>
                       {role !== 'Manager' && role !== 'Owner' && (
                         <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 800, color: totalProfit >= 0 ? 'var(--green)' : 'var(--red)' }}>{totalProfit.toLocaleString()} AED</td>
@@ -489,7 +507,8 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
                 <thead>
                   <tr>
                     <th style={tableHeaderStyle}>Profile</th>
-                    <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Units Sold</th>
+                    <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Paid</th>
+                    <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Free</th>
                     <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Revenue</th>
                     <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>% of Total</th>
                   </tr>
@@ -501,7 +520,12 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
                         <span style={{ fontWeight: 700 }}>{p.name}</span>
                       </td>
                       <td style={{ ...tableCellStyle, textAlign: 'right' }}>
-                        <span className="pill-badge badge-success">{p.count}</span>
+                        <span className="pill-badge badge-success">{p.paidCount}</span>
+                      </td>
+                      <td style={{ ...tableCellStyle, textAlign: 'right' }}>
+                        {p.freeCount > 0
+                          ? <span className="pill-badge badge-warning">{p.freeCount}</span>
+                          : <span style={{ color: 'var(--text-3)', fontSize: '0.75rem' }}>—</span>}
                       </td>
                       <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 700, color: 'var(--green)' }}>
                         {p.revenue.toLocaleString()} AED
@@ -521,7 +545,8 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
                   <tfoot>
                     <tr style={{ background: 'var(--surface-2)' }}>
                       <td style={{ ...tableCellStyle, fontWeight: 700, fontSize: '0.78rem', color: 'var(--text-2)' }}>Total</td>
-                      <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 800 }}>{totalCount}</td>
+                      <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 800 }}>{totalPaidCount}</td>
+                      <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 800, color: 'var(--yellow)' }}>{totalFreeCount}</td>
                       <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 800, color: 'var(--green)' }}>{totalRevenue.toLocaleString()} AED</td>
                       <td style={{ ...tableCellStyle, textAlign: 'right', fontWeight: 800 }}>100%</td>
                     </tr>
@@ -557,8 +582,16 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
                 <div style={{ padding: '0.9rem 1rem' }}>
                   <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.9rem' }}>
                     <div style={{ flex: 1, background: 'var(--surface-2)', borderRadius: '6px', padding: '0.6rem 0.75rem' }}>
-                      <div style={{ fontSize: '0.63rem', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Coupons Sold</div>
-                      <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text)' }}>{count}</div>
+                      <div style={{ fontSize: '0.63rem', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Paid Sales</div>
+                      <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text)' }}>
+                        {filtered.filter(c => !c.isFree && Number(c.salePrice) > 0).length}
+                      </div>
+                    </div>
+                    <div style={{ flex: 1, background: 'var(--surface-2)', borderRadius: '6px', padding: '0.6rem 0.75rem' }}>
+                      <div style={{ fontSize: '0.63rem', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Free Given</div>
+                      <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--yellow)' }}>
+                        {filtered.filter(c => c.isFree || Number(c.salePrice) === 0).length}
+                      </div>
                     </div>
                     <div style={{ flex: 1, background: 'var(--surface-2)', borderRadius: '6px', padding: '0.6rem 0.75rem' }}>
                       <div style={{ fontSize: '0.63rem', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Revenue</div>
@@ -644,6 +677,7 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
                 <thead>
                   <tr>
                     <th>Coupon Code</th>
+                    <th>Type</th>
                     <th>Profile</th>
                     <th>Site</th>
                     <th>Sold By</th>
@@ -662,6 +696,11 @@ export const SalesAnalyticsPanel = ({ pendingSale = null, showTransactions = tru
                     return (
                       <tr key={c.id || i}>
                         <td className="td-monospaced td-emphasis">{c.code}</td>
+                        <td>
+                          {(c.isFree || Number(c.salePrice) === 0)
+                            ? <span className="pill-badge badge-warning">FREE</span>
+                            : <span className="pill-badge badge-success">Paid</span>}
+                        </td>
                         <td>{prof?.name || '-'}</td>
                         <td>{site?.name || '-'}</td>
                         <td>{user?.name || '-'}</td>
